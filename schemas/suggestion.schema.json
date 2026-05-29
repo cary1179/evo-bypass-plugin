@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Evo Bypass Knowledge Suggestion",
+  "type": "object",
+  "required": ["session_id", "summary", "suggestions"],
+  "properties": {
+    "session_id": { "type": "string" },
+    "summary": { "type": "string" },
+    "suggestions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "kind", "confidence", "target", "evidence", "proposed_text", "rationale"],
+        "properties": {
+          "id": { "type": "string" },
+          "kind": { "enum": ["user_preference", "project_convention", "tool_learning", "failure_pattern", "environment_fact", "external_fact"] },
+          "confidence": { "enum": ["low", "medium", "high"] },
+          "target": { "type": "string" },
+          "evidence": { "type": "array", "items": { "type": "string" } },
+          "proposed_text": { "type": "string" },
+          "rationale": { "type": "string" }
+        }
+      }
+    }
+  }
+}

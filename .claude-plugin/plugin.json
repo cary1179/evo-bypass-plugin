@@ -1,0 +1,8 @@
+{
+  "name": "evo-bypass",
+  "version": "0.1.0",
+  "description": "Advisory-first bypass agent that suggests knowledge updates from Claude Code and Codex session behavior.",
+  "author": {
+    "name": "Sakki"
+  }
+}

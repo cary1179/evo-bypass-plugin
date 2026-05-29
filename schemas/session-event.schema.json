@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Evo Bypass Session Event",
+  "type": "object",
+  "required": ["id", "session_id", "timestamp", "hook", "tool", "summary", "paths", "status", "signals", "evidence"],
+  "properties": {
+    "id": { "type": "string" },
+    "session_id": { "type": "string" },
+    "timestamp": { "type": "string" },
+    "hook": { "enum": ["SessionStart", "UserPromptSubmit", "PostToolUse", "PostToolUseFailure", "PermissionRequest", "Stop"] },
+    "tool": { "type": "string" },
+    "summary": { "type": "string" },
+    "paths": { "type": "array", "items": { "type": "string" } },
+    "status": { "enum": ["success", "failure", "unknown"] },
+    "signals": { "type": "array", "items": { "type": "string" } },
+    "evidence": { "type": "array", "items": { "type": "string" } }
+  }
+}

@@ -33,3 +33,11 @@ Codex supports `SessionStart`, `UserPromptSubmit`, `PostToolUse`, and `Stop` hoo
 ## Claude Plugin Installation
 
 For Claude plugin installation, ensure `EVO_BYPASS_HOME` is available to hook commands, or replace `$EVO_BYPASS_HOME` in `hooks/claude-hooks.json` with the absolute path to this package before installing.
+
+## Development
+
+Run the full test suite:
+
+```bash
+npm test
+```

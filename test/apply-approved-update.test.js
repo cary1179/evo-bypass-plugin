@@ -84,13 +84,112 @@ test('applyApprovedUpdate rejects blank approval ids', async () => {
   );
 });
 
-async function writeApprovedUpdateFixture({ sessionId, approvedSuggestionIds }) {
+test('applyApprovedUpdate rejects relative targets outside root without writing', async () => {
+  const parent = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-parent-'));
+  const root = path.join(parent, 'root');
+  const outsidePath = path.join(parent, 'outside.md');
+  const paths = resolveSessionPaths({ root, sessionId: 'sess_apply_relative_escape' });
+  await fs.mkdir(paths.sessionDir, { recursive: true });
+  await fs.writeFile(paths.suggestionsPath, JSON.stringify({
+    session_id: 'sess_apply_relative_escape',
+    suggestions: [
+      { id: 'sug_1', target: '../outside.md', proposed_text: 'Do not write outside root.' }
+    ]
+  }));
+  await fs.writeFile(paths.approvalPath, JSON.stringify({
+    approved_at: new Date().toISOString(),
+    approved_suggestion_ids: ['sug_1'],
+    approval_text: 'yes, apply sug_1'
+  }));
+
+  await assert.rejects(
+    applyApprovedUpdate({ root, sessionId: 'sess_apply_relative_escape' }),
+    /target must stay inside root/
+  );
+  await assert.rejects(fs.stat(outsidePath), { code: 'ENOENT' });
+});
+
+test('applyApprovedUpdate rejects absolute targets outside root', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-'));
+  const outsidePath = path.join(path.dirname(root), `outside-${path.basename(root)}.md`);
+  const paths = resolveSessionPaths({ root, sessionId: 'sess_apply_absolute_escape' });
+  await fs.mkdir(paths.sessionDir, { recursive: true });
+  await fs.rm(outsidePath, { force: true });
+  await fs.writeFile(paths.suggestionsPath, JSON.stringify({
+    session_id: 'sess_apply_absolute_escape',
+    suggestions: [
+      { id: 'sug_1', target: outsidePath, proposed_text: 'Do not write outside root.' }
+    ]
+  }));
+  await fs.writeFile(paths.approvalPath, JSON.stringify({
+    approved_at: new Date().toISOString(),
+    approved_suggestion_ids: ['sug_1'],
+    approval_text: 'yes, apply sug_1'
+  }));
+
+  await assert.rejects(
+    applyApprovedUpdate({ root, sessionId: 'sess_apply_absolute_escape' }),
+    /target must stay inside root/
+  );
+  await assert.rejects(fs.stat(outsidePath), { code: 'ENOENT' });
+});
+
+test('applyApprovedUpdate validates all approved suggestions before writing', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-'));
+  const paths = resolveSessionPaths({ root, sessionId: 'sess_apply_no_partial' });
+  await fs.mkdir(paths.sessionDir, { recursive: true });
+  await fs.writeFile(paths.suggestionsPath, JSON.stringify({
+    session_id: 'sess_apply_no_partial',
+    suggestions: [
+      { id: 'sug_1', target: paths.defaultKnowledgePath, proposed_text: 'Do not write before validation completes.' },
+      { id: 'sug_2', target: paths.defaultKnowledgePath }
+    ]
+  }));
+  await fs.writeFile(paths.approvalPath, JSON.stringify({
+    approved_at: new Date().toISOString(),
+    approved_suggestion_ids: ['sug_1', 'sug_2'],
+    approval_text: 'yes, apply sug_1 and sug_2'
+  }));
+
+  await assert.rejects(
+    applyApprovedUpdate({ root, sessionId: 'sess_apply_no_partial' }),
+    /approved suggestion must include id, safe target, and proposed_text/
+  );
+  await assert.rejects(fs.stat(paths.defaultKnowledgePath), { code: 'ENOENT' });
+  await assert.rejects(fs.stat(paths.appliedPatchPath), { code: 'ENOENT' });
+});
+
+test('applyApprovedUpdate rejects duplicate approval ids', async () => {
+  const { root } = await writeApprovedUpdateFixture({
+    sessionId: 'sess_apply_duplicate_ids',
+    approvedSuggestionIds: ['sug_1', 'sug_1']
+  });
+
+  await assert.rejects(
+    applyApprovedUpdate({ root, sessionId: 'sess_apply_duplicate_ids' }),
+    /approved_suggestion_ids must not contain duplicates/
+  );
+});
+
+test('applyApprovedUpdate rejects unknown approval ids', async () => {
+  const { root } = await writeApprovedUpdateFixture({
+    sessionId: 'sess_apply_unknown_ids',
+    approvedSuggestionIds: ['sug_404']
+  });
+
+  await assert.rejects(
+    applyApprovedUpdate({ root, sessionId: 'sess_apply_unknown_ids' }),
+    /approved_suggestion_ids must match suggestions/
+  );
+});
+
+async function writeApprovedUpdateFixture({ sessionId, approvedSuggestionIds, suggestions }) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-'));
   const paths = resolveSessionPaths({ root, sessionId });
   await fs.mkdir(paths.sessionDir, { recursive: true });
   await fs.writeFile(paths.suggestionsPath, JSON.stringify({
     session_id: sessionId,
-    suggestions: [
+    suggestions: suggestions || [
       { id: 'sug_1', target: paths.defaultKnowledgePath, proposed_text: 'Project convention: use node:test.' }
     ]
   }));

@@ -1,6 +1,6 @@
 const SECRET_PATTERNS = [
   /\b[A-Z0-9_]*(TOKEN|SECRET|PASSWORD|PASS|API_KEY|AUTH)[A-Z0-9_]*\s*=\s*["']?[^"'\s]+["']?/gi,
-  /\b(password|api_key|token|secret)\s*:\s*["']?[^"'\s]+["']?/gi,
+  /["']?\b(password|api_key|token|secret)\b["']?\s*:\s*["']?[^"',}\s]+["']?/gi,
   /\bsk-[A-Za-z0-9_-]{6,}\b/g
 ];
 

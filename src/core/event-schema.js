@@ -10,12 +10,12 @@ export function normalizeEvent(input) {
   const status = STATUSES.has(input.status) ? input.status : 'unknown';
 
   return {
-    id: input.id || `evt_${randomUUID()}`,
+    id: nonEmptyString(input.id) || `evt_${randomUUID()}`,
     session_id: sessionId,
-    timestamp: input.timestamp || new Date().toISOString(),
+    timestamp: nonEmptyString(input.timestamp) || new Date().toISOString(),
     hook,
     tool: typeof input.tool === 'string' && input.tool ? input.tool : 'Other',
-    summary: truncate(redactSecrets(input.summary || 'No summary provided'), 500),
+    summary: truncate(redactSecrets(summaryString(input.summary)), 500),
     paths: arrayOfStrings(input.paths),
     status,
     signals: arrayOfStrings(input.signals),
@@ -44,6 +44,26 @@ function stringOrThrow(value, name) {
 
 function arrayOfStrings(value) {
   return Array.isArray(value) ? value.filter((item) => typeof item === 'string' && item.length > 0) : [];
+}
+
+function nonEmptyString(value) {
+  return typeof value === 'string' && value.length > 0 ? value : '';
+}
+
+function summaryString(value) {
+  if (value === undefined || value === null || value === '') {
+    return 'No summary provided';
+  }
+
+  if (typeof value === 'string') {
+    return value;
+  }
+
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
 }
 
 function truncate(value, maxLength) {

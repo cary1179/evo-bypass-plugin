@@ -46,11 +46,11 @@ function toEventInput({ normalized }) {
 }
 
 function inferStatus({ hook, output, error, exitCode }) {
-  if (exitCode === 0) {
-    return 'success';
-  }
   if (exitCode > 0 || hook.endsWith('Failure') || error || /\berror\b/i.test(output)) {
     return 'failure';
+  }
+  if (exitCode === 0) {
+    return 'success';
   }
   return 'unknown';
 }

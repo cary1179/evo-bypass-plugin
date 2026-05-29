@@ -170,6 +170,26 @@ test('collectEvent treats failure hooks with errors as failures', async () => {
   assert.ok(event.signals.includes('test_failure'));
 });
 
+test('collectEvent prioritizes failure hooks over zero exit codes', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-'));
+  const result = await collectEvent({
+    root,
+    payload: {
+      hook_event_name: 'PostToolUseFailure',
+      session_id: 'sess_conflict',
+      tool_name: 'Bash',
+      cmd: 'npm test',
+      exit_code: 0,
+      error: 'tests failed'
+    }
+  });
+
+  const lines = (await fs.readFile(result.paths.eventsPath, 'utf8')).trim().split('\n');
+  const event = JSON.parse(lines.at(-1));
+  assert.equal(event.status, 'failure');
+  assert.ok(event.signals.includes('test_failure'));
+});
+
 test('collect-event CLI exits successfully for invalid JSON', () => {
   const result = spawnSync(process.execPath, ['scripts/collect-event.js'], {
     cwd: path.resolve(import.meta.dirname, '..'),

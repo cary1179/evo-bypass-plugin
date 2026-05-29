@@ -6,11 +6,18 @@ export async function applyApprovedUpdate({ root = process.cwd(), sessionId }) {
   const paths = resolveSessionPaths({ root, sessionId });
   const suggestions = await readJson(paths.suggestionsPath, 'suggestions.json is required');
   const approval = await readJson(paths.approvalPath, 'approval.json is required before applying updates');
-  const approvedIds = new Set(approval.approved_suggestion_ids || []);
 
-  if (approvedIds.size === 0 || typeof approval.approval_text !== 'string' || approval.approval_text.trim() === '') {
+  if (
+    !Array.isArray(approval.approved_suggestion_ids) ||
+    approval.approved_suggestion_ids.length === 0 ||
+    approval.approved_suggestion_ids.some((id) => typeof id !== 'string' || id.trim() === '') ||
+    typeof approval.approval_text !== 'string' ||
+    approval.approval_text.trim() === ''
+  ) {
     throw new Error('approval must include approved_suggestion_ids and approval_text');
   }
+
+  const approvedIds = new Set(approval.approved_suggestion_ids);
 
   const applied = [];
   for (const suggestion of suggestions.suggestions || []) {

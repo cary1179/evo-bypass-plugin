@@ -60,3 +60,15 @@ test('normalizeEvent normalizes malformed identity fields and object summary', (
   assert.equal(event.summary.includes('hunter2'), false);
   assert.match(event.summary, /\[REDACTED\]/);
 });
+
+test('normalizeEvent emits string summaries for functions and symbols', () => {
+  assert.doesNotThrow(() => {
+    const event = normalizeEvent({ sessionId: 'sess', summary: () => {} });
+    assert.equal(typeof event.summary, 'string');
+  });
+
+  assert.doesNotThrow(() => {
+    const event = normalizeEvent({ sessionId: 'sess', summary: Symbol('secret') });
+    assert.equal(typeof event.summary, 'string');
+  });
+});

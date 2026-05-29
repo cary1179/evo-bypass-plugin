@@ -60,7 +60,8 @@ function summaryString(value) {
   }
 
   try {
-    return JSON.stringify(value);
+    const json = JSON.stringify(value);
+    return typeof json === 'string' ? json : String(value);
   } catch {
     return String(value);
   }

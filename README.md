@@ -20,6 +20,16 @@ By default, approved updates append to `.bypass/knowledge.md`.
 
 ## Codex Installation
 
+Set `EVO_BYPASS_HOME` to this package path before using the hook files:
+
+```bash
+export EVO_BYPASS_HOME=/absolute/path/to/evo-bypass
+```
+
 Merge `hooks/codex-hooks.json` into `~/.codex/hooks.json`. Existing hooks should stay in place; add Evo Bypass as an additional command hook under the same lifecycle events.
 
 Codex supports `SessionStart`, `UserPromptSubmit`, `PostToolUse`, and `Stop` hook entries in the local hooks file. Evo Bypass uses the same collector and reviewer scripts as Claude.
+
+## Claude Plugin Installation
+
+For Claude plugin installation, ensure `EVO_BYPASS_HOME` is available to hook commands, or replace `$EVO_BYPASS_HOME` in `hooks/claude-hooks.json` with the absolute path to this package before installing.

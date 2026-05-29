@@ -11,11 +11,15 @@ test('plugin manifest and hooks are valid JSON with expected lifecycle hooks', a
   assert.equal(manifest.version, '0.1.0');
   assert.ok(claudeHooks.hooks.UserPromptSubmit);
   assert.ok(claudeHooks.hooks.PostToolUse);
+  assert.ok(claudeHooks.hooks.PostToolUseFailure);
   assert.ok(claudeHooks.hooks.Stop);
   assert.ok(codexHooks.hooks.UserPromptSubmit);
   assert.ok(codexHooks.hooks.PostToolUse);
   assert.ok(codexHooks.hooks.Stop);
   assert.ok(codexHooks.hooks.SessionStart);
-  assert.match(JSON.stringify(claudeHooks), /collect-event\.js/);
+  assert.match(JSON.stringify(claudeHooks), /\$EVO_BYPASS_HOME\/scripts\//);
+  assert.match(JSON.stringify(codexHooks), /\$EVO_BYPASS_HOME\/scripts\//);
+  assert.doesNotMatch(JSON.stringify(claudeHooks), /node scripts\//);
+  assert.doesNotMatch(JSON.stringify(codexHooks), /node scripts\//);
   assert.match(JSON.stringify(codexHooks), /--runtime codex/);
 });

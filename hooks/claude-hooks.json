@@ -5,7 +5,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node scripts/collect-event.js"
+            "command": "node \"$EVO_BYPASS_HOME/scripts/collect-event.js\""
           }
         ]
       }
@@ -15,7 +15,17 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node scripts/collect-event.js"
+            "command": "node \"$EVO_BYPASS_HOME/scripts/collect-event.js\""
+          }
+        ]
+      }
+    ],
+    "PostToolUseFailure": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$EVO_BYPASS_HOME/scripts/collect-event.js\""
           }
         ]
       }
@@ -25,7 +35,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node scripts/review-session.js \"$CLAUDE_SESSION_ID\"",
+            "command": "node \"$EVO_BYPASS_HOME/scripts/review-session.js\" \"$CLAUDE_SESSION_ID\"",
             "asyncRewake": true
           }
         ]

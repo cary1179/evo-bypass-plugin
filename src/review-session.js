@@ -48,7 +48,7 @@ async function resolveKnowledgeTarget(paths) {
     const config = JSON.parse(await fs.readFile(paths.configPath, 'utf8'));
     return safeKnowledgeTarget({ root: paths.root, configuredTarget: config.knowledgeTarget, defaultTarget: paths.defaultKnowledgePath });
   } catch (error) {
-    if (error.code === 'ENOENT') {
+    if (error.code === 'ENOENT' || error instanceof SyntaxError) {
       return paths.defaultKnowledgePath;
     }
     throw error;

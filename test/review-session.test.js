@@ -106,6 +106,26 @@ test('reviewSession falls back when configured knowledge target escapes root', a
   assert.equal(result.suggestions[0].target, path.join(root, '.bypass', 'knowledge.md'));
 });
 
+test('reviewSession falls back when reviewer config is malformed JSON', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-'));
+  await fs.mkdir(path.join(root, '.bypass'), { recursive: true });
+  await fs.writeFile(path.join(root, '.bypass', 'config.json'), '{bad json');
+  await collectEvent({
+    root,
+    payload: {
+      hook_event_name: 'PostToolUse',
+      session_id: 'sess_bad_config_json',
+      tool_name: 'Bash',
+      tool_response: { exit_code: 0, output: 'Project convention: tolerate malformed local config.' }
+    }
+  });
+
+  const result = await reviewSession({ root, sessionId: 'sess_bad_config_json' });
+
+  assert.equal(result.suggestions.length, 1);
+  assert.equal(result.suggestions[0].target.endsWith('.bypass/knowledge.md'), true);
+});
+
 test('reviewSession ignores project_convention signals without actionable text', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-'));
   await writeRawEvent(root, 'sess_weak_signal', {

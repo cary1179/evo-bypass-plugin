@@ -2,9 +2,9 @@
 
 ## Summary
 
-`evo-bypass` is a Claude Code plugin that observes a main agent's task execution from the side, identifies knowledge that may need to be added or changed, and reports suggested updates at the end of the task. It does not directly update the local knowledge base during review. Knowledge updates require explicit user confirmation before any file is changed.
+`evo-bypass` is a cross-runtime agent hook package for Claude Code and Codex that observes a main agent's task execution from the side, identifies knowledge that may need to be added or changed, and reports suggested updates at the end of the task. It does not directly update the local knowledge base during review. Knowledge updates require explicit user confirmation before any file is changed.
 
-The design follows the same broad pattern as Claude's `security-guidance` plugin: hook into the session lifecycle, record useful context while the agent works, run a separate review pass at task completion, then use `asyncRewake` to feed results back into the main agent.
+The design follows the same broad pattern as Claude's `security-guidance` plugin: hook into the session lifecycle, record useful context while the agent works, run a separate review pass at task completion, then feed results back into the main agent. Claude uses plugin hooks and `asyncRewake`; Codex uses the user's Codex hooks configuration with the same shared collector and reviewer scripts.
 
 ## Goals
 
@@ -30,7 +30,8 @@ evo-bypass/
   .claude-plugin/
     plugin.json
   hooks/
-    hooks.json
+    claude-hooks.json
+    codex-hooks.json
   prompts/
     reviewer.md
   schemas/
@@ -47,6 +48,21 @@ evo-bypass/
 ```
 
 The hook layer records structured events. The reviewer layer runs once at task completion and produces suggestions. The updater layer is dormant unless the user explicitly confirms suggested updates.
+
+## Runtime Support
+
+The package has one shared core and thin runtime adapters.
+
+- Claude Code: installed as a Claude plugin with `.claude-plugin/plugin.json` and `hooks/claude-hooks.json`.
+- Codex: installed by merging `hooks/codex-hooks.json` into `~/.codex/hooks.json` or the Codex project hook configuration when project-level hooks are available.
+
+Both runtimes call the same scripts:
+
+- `node scripts/collect-event.js` for `UserPromptSubmit` and `PostToolUse`
+- `node scripts/review-session.js <session-id>` for `Stop`
+- `node scripts/apply-approved-update.js <session-id> <suggestion-ids> <approval text>` after user confirmation
+
+The collector must normalize both Claude-style and Codex-style hook payload fields into the stable event schema. Codex-specific hook names such as `SessionStart` and `PermissionRequest` may be collected as supplemental events, but v1 only requires `UserPromptSubmit`, `PostToolUse`, and `Stop` for the knowledge review flow.
 
 ## Hook Lifecycle
 
@@ -122,7 +138,7 @@ Each event is a small JSON object:
   "id": "evt_001",
   "session_id": "session-id",
   "timestamp": "2026-05-29T09:00:00.000Z",
-  "hook": "UserPromptSubmit | PostToolUse | Stop",
+  "hook": "SessionStart | UserPromptSubmit | PostToolUse | PermissionRequest | Stop",
   "tool": "Bash | Read | Edit | WebFetch | Skill | Other",
   "summary": "Concise description of what happened",
   "paths": ["optional/file/path.ts"],
@@ -132,7 +148,7 @@ Each event is a small JSON object:
 }
 ```
 
-The collector may include additional tool-specific fields, but downstream reviewer logic must only depend on this stable core schema.
+The collector may include additional tool-specific fields, but downstream reviewer logic must only depend on this stable core schema. `SessionStart` and `PermissionRequest` are primarily for Codex support and are supplemental evidence; the required review path still depends on `UserPromptSubmit`, `PostToolUse`, and `Stop`.
 
 ## Suggestion Schema
 
@@ -241,6 +257,6 @@ Integration-level tests:
 
 ## Implementation Notes
 
-- Hook payload adapters should tolerate missing fields and normalize available Claude hook input into the stable event schema.
+- Hook payload adapters should tolerate missing fields and normalize available Claude and Codex hook input into the stable event schema.
 - The v1 reviewer should combine deterministic prefiltering with `prompts/reviewer.md`. Deterministic logic finds candidate signals and redacts sensitive values; the reviewer prompt decides whether those candidates are durable knowledge.
 - A future version may replace the reviewer prompt with a dedicated subagent or model call if the runtime supports it cleanly, but the event schema and suggestion schema should remain stable.

@@ -44,6 +44,17 @@ test('normalizeEvent produces stable fields and redacted evidence', () => {
   assert.match(event.timestamp, /^\d{4}-\d{2}-\d{2}T/);
 });
 
+test('normalizeEvent preserves PostToolUseFailure hooks', () => {
+  const event = normalizeEvent({
+    sessionId: 'sess_failure',
+    hook: 'PostToolUseFailure',
+    status: 'failure'
+  });
+
+  assert.equal(event.hook, 'PostToolUseFailure');
+  assert.equal(event.status, 'failure');
+});
+
 test('normalizeEvent normalizes malformed identity fields and object summary', () => {
   const event = normalizeEvent({
     id: { invalid: true },

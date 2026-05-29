@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { redactSecrets } from './redact.js';
 
-const HOOKS = new Set(['SessionStart', 'UserPromptSubmit', 'PostToolUse', 'PermissionRequest', 'Stop']);
+const HOOKS = new Set(['SessionStart', 'UserPromptSubmit', 'PostToolUse', 'PostToolUseFailure', 'PermissionRequest', 'Stop']);
 const STATUSES = new Set(['success', 'failure', 'unknown']);
 
 export function normalizeEvent(input) {

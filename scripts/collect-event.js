@@ -1,14 +1,22 @@
 #!/usr/bin/env node
-import { readFile } from 'node:fs/promises';
 import { collectEvent } from '../src/collect-event.js';
 
 const input = await readStdin();
-const payload = input ? JSON.parse(input) : {};
+let payload = {};
+try {
+  payload = input ? JSON.parse(input) : {};
+} catch {
+  console.error('Invalid hook payload JSON; ignoring event.');
+  process.exit(0);
+}
+if (payload === null || typeof payload !== 'object' || Array.isArray(payload)) {
+  payload = {};
+}
 const runtimeArgIndex = process.argv.indexOf('--runtime');
 if (runtimeArgIndex >= 0 && process.argv[runtimeArgIndex + 1]) {
   payload.runtime = process.argv[runtimeArgIndex + 1];
 }
-const root = payload.cwd || payload.working_directory || process.cwd();
+const root = process.cwd();
 
 await collectEvent({ root, payload });
 
@@ -16,5 +24,10 @@ async function readStdin() {
   if (process.stdin.isTTY) {
     return '';
   }
-  return readFile(0, 'utf8');
+  process.stdin.setEncoding('utf8');
+  let input = '';
+  for await (const chunk of process.stdin) {
+    input += chunk;
+  }
+  return input;
 }

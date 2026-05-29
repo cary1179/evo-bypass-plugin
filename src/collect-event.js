@@ -7,7 +7,7 @@ export async function collectEvent({ root = process.cwd(), payload }) {
   const normalized = normalizeHookPayload(payload, root);
   const hook = normalized.hook;
   const sessionId = normalized.sessionId;
-  const paths = resolveSessionPaths({ root: normalized.root, sessionId });
+  const paths = resolveSessionPaths({ root, sessionId });
   await fs.mkdir(paths.sessionDir, { recursive: true });
 
   if (hook === 'UserPromptSubmit') {
@@ -15,7 +15,7 @@ export async function collectEvent({ root = process.cwd(), payload }) {
       session_id: sessionId,
       created_at: new Date().toISOString(),
       runtime: normalized.runtime,
-      working_directory: normalized.root,
+      working_directory: root,
       original_prompt: normalized.prompt,
       plugin_version: '0.1.0'
     };
@@ -31,7 +31,7 @@ function toEventInput({ normalized }) {
   const output = String(normalized.output || '');
   const command = normalized.command || '';
   const exitCode = normalized.exitCode;
-  const status = exitCode === 0 ? 'success' : exitCode > 0 ? 'failure' : 'unknown';
+  const status = inferStatus({ hook: normalized.hook, output, error: normalized.error, exitCode });
 
   return {
     sessionId: normalized.sessionId,
@@ -43,6 +43,16 @@ function toEventInput({ normalized }) {
     signals: detectSignals({ command, output, status }),
     evidence: [command, output].filter(Boolean)
   };
+}
+
+function inferStatus({ hook, output, error, exitCode }) {
+  if (exitCode === 0) {
+    return 'success';
+  }
+  if (exitCode > 0 || hook.endsWith('Failure') || error || /\berror\b/i.test(output)) {
+    return 'failure';
+  }
+  return 'unknown';
 }
 
 function summarize({ hook, tool, command }) {

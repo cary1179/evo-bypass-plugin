@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { spawnSync } from 'node:child_process';
 import { collectEvent } from '../src/collect-event.js';
 import { normalizeHookPayload } from '../src/adapters/hook-payload.js';
 
@@ -40,6 +41,33 @@ test('normalizeHookPayload accepts top-level command output and exit code fields
   assert.equal(normalized.exitCode, 0);
 });
 
+test('normalizeHookPayload tolerates malformed payloads', () => {
+  assert.doesNotThrow(() => normalizeHookPayload(null));
+  assert.doesNotThrow(() => normalizeHookPayload('bad'));
+
+  const normalized = normalizeHookPayload(null);
+  assert.equal(normalized.hook, 'PostToolUse');
+  assert.equal(normalized.sessionId, 'unknown-session');
+  assert.equal(normalized.command, '');
+  assert.equal(normalized.output, '');
+});
+
+test('normalizeHookPayload combines output fields and stringifies structured errors', () => {
+  const normalized = normalizeHookPayload({
+    hook: 'PostToolUseFailure',
+    session_id: 'codex_output',
+    stdout: 'stdout text',
+    stderr: 'stderr text',
+    output: ['output text'],
+    error: { message: 'error text' }
+  });
+
+  assert.match(normalized.output, /stdout text/);
+  assert.match(normalized.output, /stderr text/);
+  assert.match(normalized.output, /output text/);
+  assert.match(normalized.output, /error text/);
+});
+
 test('collectEvent creates metadata on UserPromptSubmit', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-'));
   const result = await collectEvent({
@@ -55,6 +83,24 @@ test('collectEvent creates metadata on UserPromptSubmit', async () => {
   assert.equal(metadata.session_id, 'sess_meta');
   assert.equal(metadata.original_prompt, 'Build the plugin');
   assert.equal(metadata.working_directory, root);
+});
+
+test('collectEvent writes artifacts under trusted root instead of payload cwd', async () => {
+  const trustedRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-trusted-'));
+  const payloadRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-payload-'));
+  const result = await collectEvent({
+    root: trustedRoot,
+    payload: {
+      hook_event_name: 'UserPromptSubmit',
+      session_id: 'sess_trusted',
+      prompt: 'Keep writes local',
+      cwd: payloadRoot
+    }
+  });
+
+  assert.equal(result.paths.root, trustedRoot);
+  await assert.doesNotReject(() => fs.access(path.join(trustedRoot, '.bypass', 'sessions', 'sess_trusted', 'metadata.json')));
+  await assert.rejects(() => fs.access(path.join(payloadRoot, '.bypass', 'sessions', 'sess_trusted', 'metadata.json')));
 });
 
 test('collectEvent appends redacted PostToolUse events', async () => {
@@ -102,4 +148,35 @@ test('collectEvent detects top-level command failures', async () => {
   const event = JSON.parse(lines.at(-1));
   assert.equal(event.status, 'failure');
   assert.deepEqual(event.signals, ['test_failure']);
+});
+
+test('collectEvent treats failure hooks with errors as failures', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-'));
+  const result = await collectEvent({
+    root,
+    payload: {
+      hook_event_name: 'PostToolUseFailure',
+      session_id: 'sess_fail',
+      tool_name: 'Bash',
+      tool_input: { command: 'npm test' },
+      error: 'tests failed'
+    }
+  });
+
+  const lines = (await fs.readFile(result.paths.eventsPath, 'utf8')).trim().split('\n');
+  const event = JSON.parse(lines.at(-1));
+  assert.equal(event.hook, 'PostToolUseFailure');
+  assert.equal(event.status, 'failure');
+  assert.ok(event.signals.includes('test_failure'));
+});
+
+test('collect-event CLI exits successfully for invalid JSON', () => {
+  const result = spawnSync(process.execPath, ['scripts/collect-event.js'], {
+    cwd: path.resolve(import.meta.dirname, '..'),
+    input: '{bad json',
+    encoding: 'utf8'
+  });
+
+  assert.equal(result.status, 0);
+  assert.match(result.stderr, /invalid hook payload json/i);
 });

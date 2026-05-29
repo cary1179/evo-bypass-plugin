@@ -1,12 +1,13 @@
 import fs from 'node:fs/promises';
+import path from 'node:path';
 import { resolveSessionPaths } from './core/session-paths.js';
 import { normalizeSuggestion } from './core/event-schema.js';
 
 export async function reviewSession({ root = process.cwd(), sessionId }) {
   const paths = resolveSessionPaths({ root, sessionId });
-  const events = await readEvents(paths.eventsPath);
+  const { events, malformedCount } = await readEvents(paths.eventsPath);
   const target = await resolveKnowledgeTarget(paths);
-  const suggestions = events.flatMap((event) => suggestionForEvent(event, target)).slice(0, 10);
+  const suggestions = dedupeSuggestions(events.flatMap((event) => suggestionForEvent(event, target))).slice(0, 10);
   const result = {
     session_id: sessionId,
     summary: suggestions.length > 0
@@ -17,17 +18,26 @@ export async function reviewSession({ root = process.cwd(), sessionId }) {
 
   await fs.mkdir(paths.sessionDir, { recursive: true });
   await fs.writeFile(paths.suggestionsPath, `${JSON.stringify(result, null, 2)}\n`);
-  await fs.writeFile(paths.reviewerLogPath, `${result.summary}\n`);
+  await fs.writeFile(paths.reviewerLogPath, reviewerLog({ result, malformedCount }));
   return result;
 }
 
 async function readEvents(eventsPath) {
   try {
     const content = await fs.readFile(eventsPath, 'utf8');
-    return content.trim().split('\n').filter(Boolean).map((line) => JSON.parse(line));
+    const events = [];
+    let malformedCount = 0;
+    for (const line of content.trim().split('\n').filter(Boolean)) {
+      try {
+        events.push(JSON.parse(line));
+      } catch {
+        malformedCount += 1;
+      }
+    }
+    return { events, malformedCount };
   } catch (error) {
     if (error.code === 'ENOENT') {
-      return [];
+      return { events: [], malformedCount: 0 };
     }
     throw error;
   }
@@ -36,7 +46,7 @@ async function readEvents(eventsPath) {
 async function resolveKnowledgeTarget(paths) {
   try {
     const config = JSON.parse(await fs.readFile(paths.configPath, 'utf8'));
-    return config.knowledgeTarget || paths.defaultKnowledgePath;
+    return safeKnowledgeTarget({ root: paths.root, configuredTarget: config.knowledgeTarget, defaultTarget: paths.defaultKnowledgePath });
   } catch (error) {
     if (error.code === 'ENOENT') {
       return paths.defaultKnowledgePath;
@@ -46,18 +56,21 @@ async function resolveKnowledgeTarget(paths) {
 }
 
 function suggestionForEvent(event, target) {
-  const text = `${event.summary}\n${event.evidence.join('\n')}`;
-  if (event.signals.includes('project_convention') || /project convention/i.test(text)) {
+  const evidence = Array.isArray(event.evidence) ? event.evidence : [];
+  const signals = Array.isArray(event.signals) ? event.signals : [];
+  const text = `${event.summary}\n${evidence.join('\n')}`;
+  const knowledgeText = extractKnowledgeText(text);
+  if ((signals.includes('project_convention') || /project convention/i.test(text)) && knowledgeText) {
     return [normalizeSuggestion({
       kind: 'project_convention',
       confidence: 'medium',
       target,
       evidence: [event.id],
-      proposed_text: extractKnowledgeText(text, 'Project convention'),
+      proposed_text: knowledgeText,
       rationale: 'The session included explicit convention evidence that may affect future work in this repository.'
     }, target)];
   }
-  if (event.signals.includes('test_failure')) {
+  if (signals.includes('test_failure')) {
     return [normalizeSuggestion({
       kind: 'failure_pattern',
       confidence: 'low',
@@ -70,7 +83,51 @@ function suggestionForEvent(event, target) {
   return [];
 }
 
-function extractKnowledgeText(text, fallback) {
-  const match = text.match(/Project convention:\s*(.+)/i);
-  return match ? `Project convention: ${match[1].trim()}` : fallback;
+function safeKnowledgeTarget({ root, configuredTarget, defaultTarget }) {
+  if (typeof configuredTarget !== 'string' || configuredTarget.trim() === '') {
+    return defaultTarget;
+  }
+
+  const resolvedRoot = path.resolve(root);
+  const resolvedTarget = path.resolve(resolvedRoot, configuredTarget);
+  const relative = path.relative(resolvedRoot, resolvedTarget);
+  if (relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative))) {
+    return resolvedTarget;
+  }
+  return defaultTarget;
+}
+
+function dedupeSuggestions(suggestions) {
+  const seen = new Set();
+  const deduped = [];
+  for (const suggestion of suggestions) {
+    const key = [suggestion.kind, suggestion.proposed_text, suggestion.target].join('\0');
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    deduped.push(suggestion);
+  }
+  return deduped;
+}
+
+function reviewerLog({ result, malformedCount }) {
+  const lines = [result.summary];
+  if (malformedCount > 0) {
+    lines.push(`Skipped ${malformedCount} malformed event line(s).`);
+  }
+  return `${lines.join('\n')}\n`;
+}
+
+function extractKnowledgeText(text) {
+  const labeled = text.match(/Project convention:\s*(.+)/i);
+  if (labeled && labeled[1].trim()) {
+    return `Project convention: ${labeled[1].trim()}`;
+  }
+
+  const usefulSentence = text
+    .split(/\r?\n|(?<=[.!?])\s+/)
+    .map((sentence) => sentence.trim())
+    .find((sentence) => /^(always|avoid|do not|don't|keep|never|prefer|use)\b/i.test(sentence));
+  return usefulSentence ? `Project convention: ${usefulSentence}` : '';
 }

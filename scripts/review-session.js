@@ -1,9 +1,16 @@
 #!/usr/bin/env node
-import { readFile } from 'node:fs/promises';
 import { reviewSession } from '../src/review-session.js';
 
 const input = await readStdin();
-const payload = input ? JSON.parse(input) : {};
+let payload = {};
+try {
+  payload = input ? JSON.parse(input) : {};
+} catch {
+  console.error('Invalid reviewer payload JSON; ignoring stdin.');
+}
+if (payload === null || typeof payload !== 'object' || Array.isArray(payload)) {
+  payload = {};
+}
 const sessionId = firstNonFlagArg()
   || payload.session_id
   || payload.sessionId
@@ -13,7 +20,7 @@ const sessionId = firstNonFlagArg()
   || process.env.CODEX_SESSION_ID;
 if (!sessionId) {
   console.error('Usage: scripts/review-session.js <session-id>');
-  process.exit(1);
+  process.exit(0);
 }
 
 const root = payload.cwd || payload.working_directory || payload.workspace || process.cwd();
@@ -24,7 +31,12 @@ async function readStdin() {
   if (process.stdin.isTTY) {
     return '';
   }
-  return readFile(0, 'utf8');
+  process.stdin.setEncoding('utf8');
+  let input = '';
+  for await (const chunk of process.stdin) {
+    input += chunk;
+  }
+  return input;
 }
 
 function firstNonFlagArg() {

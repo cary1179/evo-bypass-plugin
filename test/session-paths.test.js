@@ -19,3 +19,17 @@ test('resolveSessionPaths returns stable repository-local artifact paths', () =>
   assert.equal(paths.reviewerLogPath, path.join(paths.sessionDir, 'reviewer.log'));
   assert.equal(paths.defaultKnowledgePath, path.join(root, '.bypass', 'knowledge.md'));
 });
+
+test('resolveSessionPaths requires a string sessionId', () => {
+  assert.throws(() => resolveSessionPaths({}), /sessionId is required/);
+  assert.throws(() => resolveSessionPaths({ sessionId: '' }), /sessionId is required/);
+  assert.throws(() => resolveSessionPaths({ sessionId: 123 }), /sessionId is required/);
+});
+
+test('resolveSessionPaths rejects unsafe sessionId path segments', () => {
+  assert.throws(() => resolveSessionPaths({ sessionId: '../outside' }), /sessionId must be a safe path segment/);
+  assert.throws(() => resolveSessionPaths({ sessionId: 'a/b' }), /sessionId must be a safe path segment/);
+  assert.throws(() => resolveSessionPaths({ sessionId: 'a\\b' }), /sessionId must be a safe path segment/);
+  assert.throws(() => resolveSessionPaths({ sessionId: '.' }), /sessionId must be a safe path segment/);
+  assert.throws(() => resolveSessionPaths({ sessionId: '..' }), /sessionId must be a safe path segment/);
+});

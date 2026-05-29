@@ -4,6 +4,9 @@ export function resolveSessionPaths({ root = process.cwd(), sessionId }) {
   if (!sessionId || typeof sessionId !== 'string') {
     throw new Error('sessionId is required');
   }
+  if (sessionId === '.' || sessionId === '..' || !/^[A-Za-z0-9_.-]+$/.test(sessionId)) {
+    throw new Error('sessionId must be a safe path segment');
+  }
 
   const bypassDir = path.join(root, '.bypass');
   const sessionDir = path.join(bypassDir, 'sessions', sessionId);

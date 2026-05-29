@@ -1,0 +1,14 @@
+{
+  "name": "evo-bypass",
+  "version": "0.1.0",
+  "description": "Advisory-first Claude Code and Codex hook package for session-based knowledge update suggestions.",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "test": "node --test",
+    "test:unit": "node --test test/*.test.js"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

@@ -14,10 +14,26 @@ export function normalizeHookPayload(payload, fallbackRoot = process.cwd()) {
     tool: payload.tool_name || payload.tool || payload.toolName || (hook === 'UserPromptSubmit' ? 'UserPrompt' : 'Other'),
     toolInput,
     toolResponse,
-    command: toolInput.command || toolInput.cmd || payload.command || '',
-    output: toolResponse.output || toolResponse.stderr || toolResponse.stdout || payload.output || '',
-    exitCode: Number.isInteger(toolResponse.exit_code) ? toolResponse.exit_code : toolResponse.exitCode
+    command: toolInput.command || toolInput.cmd || payload.command || payload.cmd || '',
+    output: toolResponse.output || toolResponse.stderr || toolResponse.stdout || payload.output || payload.stderr || payload.stdout || '',
+    exitCode: normalizeExitCode(toolResponse, payload)
   };
+}
+
+function normalizeExitCode(toolResponse, payload) {
+  if (Number.isInteger(toolResponse.exit_code)) {
+    return toolResponse.exit_code;
+  }
+  if (Number.isInteger(toolResponse.exitCode)) {
+    return toolResponse.exitCode;
+  }
+  if (Number.isInteger(payload.exit_code)) {
+    return payload.exit_code;
+  }
+  if (Number.isInteger(payload.exitCode)) {
+    return payload.exitCode;
+  }
+  return undefined;
 }
 
 function detectRuntime(payload) {

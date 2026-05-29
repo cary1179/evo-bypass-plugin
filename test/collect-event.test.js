@@ -25,6 +25,21 @@ test('normalizeHookPayload accepts Codex-style hook payloads', () => {
   assert.equal(normalized.command, 'npm test');
 });
 
+test('normalizeHookPayload accepts top-level command output and exit code fields', () => {
+  const normalized = normalizeHookPayload({
+    hook: 'PostToolUse',
+    session_id: 'codex_top',
+    tool_name: 'exec_command',
+    cmd: 'npm test',
+    stdout: 'ok',
+    exit_code: 0
+  });
+
+  assert.equal(normalized.command, 'npm test');
+  assert.equal(normalized.output, 'ok');
+  assert.equal(normalized.exitCode, 0);
+});
+
 test('collectEvent creates metadata on UserPromptSubmit', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-'));
   const result = await collectEvent({
@@ -67,4 +82,24 @@ test('collectEvent appends redacted PostToolUse events', async () => {
   assert.equal(event.status, 'failure');
   assert.deepEqual(event.signals, ['test_failure']);
   assert.equal(JSON.stringify(event).includes('secretsecret'), false);
+});
+
+test('collectEvent detects top-level command failures', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-'));
+  const result = await collectEvent({
+    root,
+    payload: {
+      hook_event_name: 'PostToolUse',
+      session_id: 'sess_top_failure',
+      tool_name: 'exec_command',
+      cmd: 'npm test',
+      stderr: 'test failed',
+      exit_code: 1
+    }
+  });
+
+  const lines = (await fs.readFile(result.paths.eventsPath, 'utf8')).trim().split('\n');
+  const event = JSON.parse(lines.at(-1));
+  assert.equal(event.status, 'failure');
+  assert.deepEqual(event.signals, ['test_failure']);
 });

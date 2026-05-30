@@ -27,8 +27,8 @@ The collector records summaries, paths, exit status, redacted evidence snippets,
 1. `UserPromptSubmit` creates session metadata.
 2. `PostToolUse` and `PostToolUseFailure` append redacted tool events.
 3. `Stop` runs the reviewer and writes `suggestions.json`.
-4. The reviewer reports possible knowledge updates back to the main agent.
-5. The main agent asks the user whether to apply specific suggestions.
+4. If the reviewer finds durable knowledge, it writes a Markdown report under the user-level bypass directory.
+5. The reviewer tells the main agent to read that report and ask the user whether to apply specific suggestions.
 6. Only after approval, `scripts/apply-approved-update.js` writes approved entries.
 
 By default, approved updates append to:
@@ -50,15 +50,41 @@ Reviewer suggestions use these kinds:
 
 Each suggestion includes evidence ids, confidence, a target knowledge file, proposed text, and rationale.
 
-## Install For Codex
+## Stop Hook Reports
 
-Set `EVO_BYPASS_HOME` to the absolute path of this package:
+When a completed session has possible knowledge updates, Evo Bypass writes the detailed review report to:
 
-```bash
-export EVO_BYPASS_HOME=/absolute/path/to/evo-bypass
+```text
+~/.bypass/suggestion/<session-id>.md
 ```
 
-Merge `hooks/codex-hooks.json` into `~/.codex/hooks.json`.
+The Stop hook response only includes the path to that Markdown file, so the hook output stays short while the main agent can still inspect the full details.
+
+For Codex, the Stop hook emits valid JSON. If suggestions exist, `continue` is `false` so the main agent does not silently finish before telling the user about the report. If there are no suggestions, no Markdown report is written and `continue` is `true`.
+
+No-suggestion sessions return:
+
+```text
+本次任务无待更新知识。
+```
+
+## Install For Codex
+
+From the Evo Bypass repository root, run:
+
+```bash
+pnpm run install:codex
+```
+
+The installer writes Evo Bypass hooks into:
+
+```text
+~/.codex/hooks.json
+```
+
+It preserves existing hooks and skips Evo Bypass commands that are already installed, so it is safe to run more than once.
+
+For manual installation, merge `hooks/codex-hooks.json` into `~/.codex/hooks.json`.
 
 Keep any existing hooks. Add Evo Bypass as an additional command under the same lifecycle events instead of replacing other tools. The included Codex hook file covers:
 
@@ -67,17 +93,25 @@ Keep any existing hooks. Add Evo Bypass as an additional command under the same 
 - `PostToolUse`
 - `Stop`
 
-If your hook environment does not inherit shell exports, replace `$EVO_BYPASS_HOME` in the hook commands with the absolute package path.
+The one-command installer replaces `$EVO_BYPASS_HOME` in hook commands with the absolute path of the current package checkout. If you install manually, make the same replacement yourself or export `EVO_BYPASS_HOME` in the hook environment.
 
 ## Install For Claude Code
 
-Set `EVO_BYPASS_HOME` before using the Claude hook config:
+From the Evo Bypass repository root, run:
 
 ```bash
-export EVO_BYPASS_HOME=/absolute/path/to/evo-bypass
+pnpm run install:claude
 ```
 
-Use `.claude-plugin/plugin.json` as the plugin manifest and `hooks/claude-hooks.json` as the hook configuration. The Claude config covers:
+The installer writes Evo Bypass hooks into:
+
+```text
+~/.claude/settings.json
+```
+
+It preserves existing hooks and skips Evo Bypass commands that are already installed, so it is safe to run more than once.
+
+For manual installation, use `.claude-plugin/plugin.json` as the plugin manifest and `hooks/claude-hooks.json` as the hook configuration. The Claude config covers:
 
 - `UserPromptSubmit`
 - `PostToolUse`

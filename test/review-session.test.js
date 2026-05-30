@@ -13,6 +13,7 @@ const reviewCliPath = path.join(repoRoot, 'scripts', 'review-session.js');
 
 test('reviewSession suggests durable knowledge from convention evidence', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-'));
+  const bypassDir = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-home-'));
   await collectEvent({ root, payload: { hook_event_name: 'UserPromptSubmit', session_id: 'sess_review', prompt: 'Use Node only' } });
   await collectEvent({
     root,
@@ -25,32 +26,105 @@ test('reviewSession suggests durable knowledge from convention evidence', async 
     }
   });
 
-  const result = await reviewSession({ root, sessionId: 'sess_review' });
+  const result = await reviewSession({ root, sessionId: 'sess_review', bypassDir });
   assert.equal(result.session_id, 'sess_review');
   assert.equal(result.suggestions.length, 1);
   assert.equal(result.suggestions[0].kind, 'project_convention');
   assert.equal(result.suggestions[0].target.endsWith('.bypass/knowledge.md'), true);
+  assert.equal(result.suggestion_report_path, path.join(bypassDir, 'suggestion', 'sess_review.md'));
+  const report = await fs.readFile(result.suggestion_report_path, 'utf8');
+  assert.match(report, /Project convention: use node:test and avoid runtime dependencies\./);
 });
 
 test('reviewSession emits no suggestions without durable signals', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-'));
+  const bypassDir = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-home-'));
   await collectEvent({ root, payload: { hook_event_name: 'UserPromptSubmit', session_id: 'sess_empty', prompt: 'hello' } });
 
-  const result = await reviewSession({ root, sessionId: 'sess_empty' });
+  const result = await reviewSession({ root, sessionId: 'sess_empty', bypassDir });
   assert.deepEqual(result.suggestions, []);
+  assert.equal(result.suggestion_report_path, undefined);
+  await assert.rejects(fs.stat(path.join(bypassDir, 'suggestion', 'sess_empty.md')), { code: 'ENOENT' });
 });
 
 test('review-session CLI prints a report for an existing session', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-'));
+  const bypassDir = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-home-'));
   await collectEvent({ root, payload: { hook_event_name: 'UserPromptSubmit', session_id: 'sess_cli', prompt: 'hello' } });
+  await collectEvent({
+    root,
+    payload: {
+      hook_event_name: 'PostToolUse',
+      session_id: 'sess_cli',
+      tool_name: 'Bash',
+      tool_response: { exit_code: 0, output: 'Project convention: keep report details in markdown.' }
+    }
+  });
 
   const result = spawnSync(process.execPath, [reviewCliPath, 'sess_cli'], {
     cwd: root,
+    env: { ...process.env, EVO_BYPASS_DIR: bypassDir },
     encoding: 'utf8'
   });
 
   assert.equal(result.status, 0);
-  assert.match(result.stdout, /Knowledge Update Suggestions/);
+  const reportPath = path.join(bypassDir, 'suggestion', 'sess_cli.md');
+  assert.match(result.stdout, new RegExp(`请阅读 ${escapeRegExp(reportPath)} 文件`));
+  const report = await fs.readFile(reportPath, 'utf8');
+  assert.match(report, /Project convention: keep report details in markdown\./);
+});
+
+test('review-session CLI prints valid Codex stop hook JSON output', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-'));
+  const bypassDir = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-home-'));
+  await collectEvent({ root, payload: { hook_event_name: 'UserPromptSubmit', session_id: 'sess_codex_cli', prompt: 'hello' } });
+  await collectEvent({
+    root,
+    payload: {
+      hook_event_name: 'PostToolUse',
+      session_id: 'sess_codex_cli',
+      tool_name: 'Bash',
+      tool_response: { exit_code: 0, output: 'Project convention: keep hook reports readable.' }
+    }
+  });
+
+  const result = spawnSync(process.execPath, [reviewCliPath, '--runtime', 'codex'], {
+    cwd: root,
+    input: JSON.stringify({ session_id: 'sess_codex_cli', cwd: root }),
+    env: { ...process.env, EVO_BYPASS_DIR: bypassDir },
+    encoding: 'utf8'
+  });
+
+  assert.equal(result.status, 0);
+  assert.match(result.stdout, /^\{\n/);
+  const output = JSON.parse(result.stdout);
+  assert.equal(output.continue, false);
+  assert.equal(output.suppressOutput, false);
+  const reportPath = path.join(bypassDir, 'suggestion', 'sess_codex_cli.md');
+  assert.match(output.systemMessage, new RegExp(`请阅读 ${escapeRegExp(reportPath)} 文件`));
+  assert.match(output.systemMessage, /请告知用户/);
+  assert.doesNotMatch(output.systemMessage, /Project convention: keep hook reports readable\./);
+  const report = await fs.readFile(reportPath, 'utf8');
+  assert.match(report, /Project convention: keep hook reports readable\./);
+});
+
+test('review-session CLI does not write markdown when there are no suggestions', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-'));
+  const bypassDir = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-home-'));
+  await collectEvent({ root, payload: { hook_event_name: 'UserPromptSubmit', session_id: 'sess_codex_empty', prompt: 'hello' } });
+
+  const result = spawnSync(process.execPath, [reviewCliPath, '--runtime', 'codex'], {
+    cwd: root,
+    input: JSON.stringify({ session_id: 'sess_codex_empty', cwd: root }),
+    env: { ...process.env, EVO_BYPASS_DIR: bypassDir },
+    encoding: 'utf8'
+  });
+
+  assert.equal(result.status, 0);
+  const output = JSON.parse(result.stdout);
+  assert.equal(output.continue, true);
+  assert.equal(output.systemMessage, '本次任务无待更新知识。');
+  await assert.rejects(fs.stat(path.join(bypassDir, 'suggestion', 'sess_codex_empty.md')), { code: 'ENOENT' });
 });
 
 test('review-session CLI ignores malformed stdin JSON when a session arg is present', async () => {
@@ -183,4 +257,8 @@ async function appendRawEvent(root, sessionId, line) {
   const sessionDir = path.join(root, '.bypass', 'sessions', sessionId);
   await fs.mkdir(sessionDir, { recursive: true });
   await fs.appendFile(path.join(sessionDir, 'events.jsonl'), `${line}\n`);
+}
+
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }

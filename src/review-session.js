@@ -1,9 +1,10 @@
 import fs from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 import { resolveSessionPaths } from './core/session-paths.js';
 import { normalizeSuggestion } from './core/event-schema.js';
 
-export async function reviewSession({ root = process.cwd(), sessionId }) {
+export async function reviewSession({ root = process.cwd(), sessionId, bypassDir = defaultBypassDir() }) {
   const paths = resolveSessionPaths({ root, sessionId });
   const { events, malformedCount } = await readEvents(paths.eventsPath);
   const target = await resolveKnowledgeTarget(paths);
@@ -16,10 +17,57 @@ export async function reviewSession({ root = process.cwd(), sessionId }) {
     suggestions
   };
 
+  if (suggestions.length > 0) {
+    result.suggestion_report_path = await writeSuggestionReport({ bypassDir, result });
+  }
+
   await fs.mkdir(paths.sessionDir, { recursive: true });
   await fs.writeFile(paths.suggestionsPath, `${JSON.stringify(result, null, 2)}\n`);
   await fs.writeFile(paths.reviewerLogPath, reviewerLog({ result, malformedCount }));
   return result;
+}
+
+function defaultBypassDir() {
+  return process.env.EVO_BYPASS_DIR || path.join(os.homedir(), '.bypass');
+}
+
+async function writeSuggestionReport({ bypassDir, result }) {
+  const reportDir = path.join(bypassDir, 'suggestion');
+  const reportPath = path.join(reportDir, `${result.session_id}.md`);
+  await fs.mkdir(reportDir, { recursive: true });
+  await fs.writeFile(reportPath, formatSuggestionReportMarkdown(result));
+  return reportPath;
+}
+
+function formatSuggestionReportMarkdown(result) {
+  const lines = [
+    '# Knowledge Update Suggestions',
+    '',
+    `Session: ${result.session_id}`,
+    '',
+    `Found ${result.suggestions.length} possible knowledge update(s) from this task.`,
+    '',
+    '---'
+  ];
+
+  for (const suggestion of result.suggestions) {
+    lines.push('');
+    lines.push(`## ${suggestion.id}`);
+    lines.push('');
+    lines.push(`- Kind: ${suggestion.kind || 'unknown'}`);
+    lines.push(`- Confidence: ${suggestion.confidence || 'unknown'}`);
+    lines.push(`- Target: ${suggestion.target}`);
+    lines.push(`- Evidence: ${(suggestion.evidence || []).join(', ')}`);
+    if (suggestion.rationale) {
+      lines.push(`- Rationale: ${suggestion.rationale}`);
+    }
+    lines.push('');
+    lines.push('Proposed knowledge:');
+    lines.push('');
+    lines.push(suggestion.proposed_text);
+  }
+
+  return `${lines.join('\n')}\n`;
 }
 
 async function readEvents(eventsPath) {

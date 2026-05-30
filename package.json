@@ -5,6 +5,8 @@
   "type": "module",
   "private": true,
   "scripts": {
+    "install:claude": "node scripts/install-hooks.js --runtime claude",
+    "install:codex": "node scripts/install-hooks.js --runtime codex",
     "test": "node --test",
     "test:unit": "node --test test/*.test.js"
   },

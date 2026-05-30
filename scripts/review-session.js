@@ -25,7 +25,16 @@ if (!sessionId) {
 
 const root = payload.cwd || payload.working_directory || payload.workspace || process.cwd();
 const result = await reviewSession({ root, sessionId });
-console.log(formatReport(result));
+const report = formatReport(result);
+if (isCodexRuntime(payload)) {
+  console.log(JSON.stringify({
+    continue: result.suggestions.length === 0,
+    suppressOutput: false,
+    systemMessage: report
+  }, null, 2));
+} else {
+  console.log(report);
+}
 
 async function readStdin() {
   if (process.stdin.isTTY) {
@@ -53,24 +62,18 @@ function firstNonFlagArg() {
   return undefined;
 }
 
+function isCodexRuntime(payload) {
+  const runtimeArgIndex = process.argv.indexOf('--runtime');
+  if (runtimeArgIndex >= 0 && process.argv[runtimeArgIndex + 1] === 'codex') {
+    return true;
+  }
+  return payload.runtime === 'codex';
+}
+
 function formatReport(result) {
   if (result.suggestions.length === 0) {
-    return 'Knowledge Update Suggestions\n\nNo durable knowledge updates suggested for this session.';
+    return '本次任务无待更新知识。';
   }
 
-  const lines = [
-    'Knowledge Update Suggestions',
-    '',
-    `I found ${result.suggestions.length} possible knowledge update(s) from this task.`,
-    'Ask the user whether they want to apply them before running the updater.',
-    ''
-  ];
-
-  for (const suggestion of result.suggestions) {
-    lines.push(`- ${suggestion.id} [${suggestion.kind}, ${suggestion.confidence}] -> ${suggestion.target}`);
-    lines.push(`  Proposed: ${suggestion.proposed_text}`);
-    lines.push(`  Evidence: ${suggestion.evidence.join(', ')}`);
-  }
-
-  return lines.join('\n');
+  return `请告知用户：本次任务总结了可更新知识或记忆。请阅读 ${result.suggestion_report_path} 文件，了解根据本次任务总结的知识或记忆，并询问用户是否应用这些建议。`;
 }

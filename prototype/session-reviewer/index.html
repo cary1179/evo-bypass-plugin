@@ -1,0 +1,1097 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Evo Bypass Session Reviewer</title>
+  <style>
+    :root {
+      --bg: #f6f5f1;
+      --surface: #ffffff;
+      --surface-2: #fdfbf6;
+      --ink: #1f2426;
+      --muted: #687174;
+      --line: #d8d6cc;
+      --line-strong: #b9b6aa;
+      --accent: #087a6f;
+      --accent-soft: #d8efea;
+      --amber: #a86410;
+      --amber-soft: #f5e4c8;
+      --red: #a83c36;
+      --red-soft: #f3d9d5;
+      --mono: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+      --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      --serif: Georgia, "Times New Roman", serif;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: var(--sans);
+      letter-spacing: 0;
+    }
+
+    button,
+    input,
+    select {
+      font: inherit;
+    }
+
+    button {
+      cursor: pointer;
+    }
+
+    .shell {
+      min-height: 100vh;
+      display: grid;
+      grid-template-columns: 260px minmax(0, 1fr);
+    }
+
+    .rail {
+      border-right: 1px solid var(--line);
+      padding: 24px 18px;
+      background: #efede5;
+      position: sticky;
+      top: 0;
+      height: 100vh;
+    }
+
+    .brand {
+      font-family: var(--serif);
+      font-size: 24px;
+      line-height: 1.08;
+      margin-bottom: 28px;
+    }
+
+    .brand small {
+      display: block;
+      margin-top: 8px;
+      color: var(--muted);
+      font-family: var(--sans);
+      font-size: 12px;
+      line-height: 1.4;
+    }
+
+    .rail-section {
+      border-top: 1px solid var(--line);
+      padding-top: 16px;
+      margin-top: 16px;
+    }
+
+    .rail-label {
+      color: var(--muted);
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+      margin-bottom: 10px;
+    }
+
+    .rail-stat {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 10px;
+      align-items: baseline;
+      padding: 8px 0;
+      font-size: 13px;
+    }
+
+    .rail-stat strong {
+      font-family: var(--mono);
+      font-size: 15px;
+    }
+
+    .main {
+      min-width: 0;
+      padding: 28px;
+    }
+
+    .topbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 18px;
+      margin-bottom: 22px;
+    }
+
+    h1 {
+      margin: 0;
+      font-family: var(--serif);
+      font-size: clamp(30px, 4vw, 52px);
+      line-height: .98;
+      font-weight: 500;
+      text-wrap: pretty;
+    }
+
+    .subtitle {
+      max-width: 760px;
+      margin: 10px 0 0;
+      color: var(--muted);
+      line-height: 1.55;
+      font-size: 14px;
+    }
+
+    .ghost-link,
+    .nav-button {
+      border: 1px solid var(--line-strong);
+      background: transparent;
+      color: var(--ink);
+      min-height: 36px;
+      padding: 7px 11px;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      border-radius: 6px;
+      white-space: nowrap;
+    }
+
+    .toolbar {
+      display: grid;
+      grid-template-columns: minmax(220px, 1fr) 150px 170px;
+      gap: 10px;
+      align-items: center;
+      margin: 18px 0;
+    }
+
+    .field {
+      border: 1px solid var(--line);
+      background: var(--surface);
+      min-height: 40px;
+      padding: 8px 10px;
+      border-radius: 6px;
+      color: var(--ink);
+      width: 100%;
+    }
+
+    .table-wrap {
+      border: 1px solid var(--line);
+      background: var(--surface);
+      overflow: hidden;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      table-layout: fixed;
+    }
+
+    th,
+    td {
+      padding: 13px 12px;
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+      vertical-align: top;
+      font-size: 13px;
+    }
+
+    th {
+      color: var(--muted);
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: .07em;
+      background: var(--surface-2);
+    }
+
+    tr:last-child td {
+      border-bottom: 0;
+    }
+
+    tr.session-row {
+      cursor: pointer;
+    }
+
+    tr.session-row:hover td {
+      background: #fbf9f0;
+    }
+
+    .mono {
+      font-family: var(--mono);
+      font-size: 12px;
+      overflow-wrap: anywhere;
+    }
+
+    .muted {
+      color: var(--muted);
+    }
+
+    .prompt-preview {
+      color: var(--muted);
+      line-height: 1.45;
+      margin-top: 4px;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+
+    .pill-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      min-height: 22px;
+      padding: 2px 7px;
+      border: 1px solid var(--line);
+      background: #f7f6f0;
+      border-radius: 999px;
+      font-size: 11px;
+      line-height: 1;
+      color: var(--muted);
+      white-space: nowrap;
+    }
+
+    .pill.good {
+      border-color: #a9d7ce;
+      background: var(--accent-soft);
+      color: #075d55;
+    }
+
+    .pill.warn {
+      border-color: #e0c089;
+      background: var(--amber-soft);
+      color: #75460b;
+    }
+
+    .pill.bad {
+      border-color: #e0aaa5;
+      background: var(--red-soft);
+      color: #74302c;
+    }
+
+    .metric-grid {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 10px;
+      margin-bottom: 16px;
+    }
+
+    .metric {
+      border: 1px solid var(--line);
+      background: var(--surface);
+      padding: 12px;
+      min-height: 78px;
+    }
+
+    .metric span {
+      color: var(--muted);
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: .07em;
+    }
+
+    .metric strong {
+      display: block;
+      font-family: var(--mono);
+      font-size: 24px;
+      margin-top: 8px;
+    }
+
+    .detail-layout {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 360px;
+      gap: 16px;
+      align-items: start;
+    }
+
+    .panel {
+      border: 1px solid var(--line);
+      background: var(--surface);
+      margin-bottom: 16px;
+    }
+
+    .panel-head {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 13px 14px;
+      border-bottom: 1px solid var(--line);
+      background: var(--surface-2);
+    }
+
+    .panel-title {
+      margin: 0;
+      font-size: 13px;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+      color: var(--muted);
+      font-weight: 650;
+    }
+
+    .panel-body {
+      padding: 14px;
+    }
+
+    .meta-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .kv {
+      min-width: 0;
+    }
+
+    .kv span {
+      display: block;
+      color: var(--muted);
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: .07em;
+      margin-bottom: 5px;
+    }
+
+    .kv strong {
+      font-size: 13px;
+      line-height: 1.42;
+      overflow-wrap: anywhere;
+    }
+
+    details.prompt {
+      border-top: 1px solid var(--line);
+      margin-top: 14px;
+      padding-top: 10px;
+    }
+
+    summary {
+      cursor: pointer;
+      color: var(--accent);
+      font-size: 13px;
+      user-select: none;
+    }
+
+    pre {
+      margin: 10px 0 0;
+      padding: 12px;
+      overflow: auto;
+      max-height: 280px;
+      background: #171b1c;
+      color: #eef2ed;
+      font-family: var(--mono);
+      font-size: 11px;
+      line-height: 1.55;
+      border-radius: 4px;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
+
+    .timeline {
+      display: grid;
+      gap: 8px;
+    }
+
+    .event {
+      display: grid;
+      grid-template-columns: 128px minmax(0, 1fr);
+      gap: 12px;
+      border: 1px solid var(--line);
+      background: #fff;
+      padding: 10px;
+    }
+
+    .event-time {
+      color: var(--muted);
+      font-family: var(--mono);
+      font-size: 11px;
+      line-height: 1.5;
+    }
+
+    .event-main {
+      min-width: 0;
+    }
+
+    .event-summary {
+      margin: 0 0 8px;
+      font-size: 13px;
+      line-height: 1.45;
+      overflow-wrap: anywhere;
+    }
+
+    .event-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      align-items: center;
+    }
+
+    .mini-button {
+      border: 1px solid var(--line);
+      background: #f8f7f1;
+      color: var(--ink);
+      min-height: 26px;
+      padding: 3px 8px;
+      border-radius: 4px;
+      font-size: 12px;
+    }
+
+    .suggestion {
+      border: 1px solid var(--line);
+      background: #fff;
+      padding: 12px;
+      margin-bottom: 10px;
+    }
+
+    .suggestion:last-child {
+      margin-bottom: 0;
+    }
+
+    .suggestion h3 {
+      margin: 9px 0 8px;
+      font-size: 15px;
+      line-height: 1.35;
+      font-weight: 650;
+    }
+
+    .suggestion p {
+      margin: 8px 0 0;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    .empty {
+      color: var(--muted);
+      padding: 18px;
+      border: 1px dashed var(--line-strong);
+      background: #fbfaf5;
+      font-size: 13px;
+      line-height: 1.55;
+    }
+
+    .focus-box {
+      border-left: 3px solid var(--accent);
+      background: #f0faf7;
+      padding: 10px 11px;
+      font-family: var(--mono);
+      font-size: 12px;
+      line-height: 1.5;
+      overflow-wrap: anywhere;
+    }
+
+    .route {
+      display: none;
+    }
+
+    .route.active {
+      display: block;
+    }
+
+    @media (max-width: 980px) {
+      .shell {
+        grid-template-columns: 1fr;
+      }
+
+      .rail {
+        position: static;
+        height: auto;
+        border-right: 0;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .toolbar,
+      .detail-layout,
+      .metric-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .event {
+        grid-template-columns: 1fr;
+      }
+
+      .topbar {
+        display: grid;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <aside class="rail">
+      <div class="brand">
+        Evo Bypass
+        <small>Runtime session review surface for hook records, evidence snippets, and knowledge suggestions.</small>
+      </div>
+      <div class="rail-section">
+        <div class="rail-label">Workspace</div>
+        <div class="mono">/Users/sakki/Documents/evo-bypass</div>
+      </div>
+      <div class="rail-section" id="railStats"></div>
+    </aside>
+
+    <main class="main">
+      <section id="listRoute" class="route active">
+        <div class="topbar">
+          <div>
+            <h1>Session records</h1>
+            <p class="subtitle">任务结束时打开的旁路观察台。用 session_id 追踪每次主 agent 会话，快速判断这次是否产生了可沉淀的知识更新。</p>
+          </div>
+          <a class="ghost-link" href="#/sessions/demo-with-knowledge-update">查看有建议样例</a>
+        </div>
+
+        <div class="metric-grid" id="listMetrics"></div>
+
+        <div class="toolbar">
+          <input id="searchInput" class="field" type="search" placeholder="搜索 session_id、prompt、signal">
+          <select id="runtimeFilter" class="field">
+            <option value="all">全部 runtime</option>
+            <option value="codex">codex</option>
+            <option value="claude">claude</option>
+          </select>
+          <select id="suggestionFilter" class="field">
+            <option value="all">全部建议状态</option>
+            <option value="with">有知识建议</option>
+            <option value="without">无知识建议</option>
+          </select>
+        </div>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th style="width: 30%">session_id</th>
+                <th style="width: 14%">created_at</th>
+                <th style="width: 10%">runtime</th>
+                <th style="width: 14%">events</th>
+                <th style="width: 17%">signals</th>
+                <th style="width: 15%">suggestions</th>
+              </tr>
+            </thead>
+            <tbody id="sessionRows"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="detailRoute" class="route">
+        <div class="topbar">
+          <div>
+            <h1>Session detail</h1>
+            <p class="subtitle" id="detailSubtitle"></p>
+          </div>
+          <a class="ghost-link" href="#/sessions">返回列表</a>
+        </div>
+
+        <div class="metric-grid" id="detailMetrics"></div>
+
+        <div class="detail-layout">
+          <div>
+            <section class="panel">
+              <div class="panel-head">
+                <h2 class="panel-title">Metadata</h2>
+                <span class="pill" id="runtimePill"></span>
+              </div>
+              <div class="panel-body" id="metadataPanel"></div>
+            </section>
+
+            <section class="panel">
+              <div class="panel-head">
+                <h2 class="panel-title">Hook timeline</h2>
+                <span class="muted" id="timelineCount"></span>
+              </div>
+              <div class="panel-body">
+                <div class="timeline" id="timeline"></div>
+              </div>
+            </section>
+          </div>
+
+          <aside>
+            <section class="panel">
+              <div class="panel-head">
+                <h2 class="panel-title">Suggestions</h2>
+                <span class="muted" id="suggestionCount"></span>
+              </div>
+              <div class="panel-body" id="suggestionsPanel"></div>
+            </section>
+
+            <section class="panel">
+              <div class="panel-head">
+                <h2 class="panel-title">Selected event</h2>
+              </div>
+              <div class="panel-body" id="selectedEventPanel"></div>
+            </section>
+
+            <section class="panel">
+              <div class="panel-head">
+                <h2 class="panel-title">Reviewer log</h2>
+              </div>
+              <div class="panel-body" id="reviewerPanel"></div>
+            </section>
+          </aside>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script>
+    const sessions = [
+      {
+        id: "demo-with-knowledge-update",
+        fixture: true,
+        metadata: {
+          session_id: "demo-with-knowledge-update",
+          created_at: "2026-05-30T14:18:00.000Z",
+          runtime: "codex",
+          working_directory: "/Users/sakki/Documents/evo-bypass",
+          original_prompt: "主 agent 执行结束时，如果有知识更新，打开旁路 runtime web 界面，展示 meta、hooks、events、suggestions，并让用户判断是否批准写入知识库。",
+          plugin_version: "0.1.0"
+        },
+        events: [
+          {
+            id: "evt_demo_start",
+            session_id: "demo-with-knowledge-update",
+            timestamp: "2026-05-30T14:18:00.100Z",
+            hook: "SessionStart",
+            tool: "Other",
+            summary: "Other completed SessionStart",
+            paths: [],
+            status: "unknown",
+            signals: [],
+            evidence: []
+          },
+          {
+            id: "evt_demo_prompt",
+            session_id: "demo-with-knowledge-update",
+            timestamp: "2026-05-30T14:18:01.120Z",
+            hook: "UserPromptSubmit",
+            tool: "UserPrompt",
+            summary: "User submitted the task prompt",
+            paths: [],
+            status: "unknown",
+            signals: [],
+            evidence: []
+          },
+          {
+            id: "evt_demo_collect",
+            session_id: "demo-with-knowledge-update",
+            timestamp: "2026-05-30T14:19:22.620Z",
+            hook: "PostToolUse",
+            tool: "Bash",
+            summary: "Bash ran command: npm test",
+            paths: ["/Users/sakki/Documents/evo-bypass"],
+            status: "success",
+            signals: ["project_convention"],
+            evidence: ["npm test", "Project convention: keep hook reports readable and put full suggestion details in a separate report path."]
+          },
+          {
+            id: "evt_demo_stop",
+            session_id: "demo-with-knowledge-update",
+            timestamp: "2026-05-30T14:20:05.400Z",
+            hook: "Stop",
+            tool: "review-session",
+            summary: "review-session wrote suggestions.json and a user-level Markdown report",
+            paths: ["/Users/sakki/Documents/evo-bypass/.bypass/sessions/demo-with-knowledge-update/suggestions.json"],
+            status: "success",
+            signals: ["project_convention"],
+            evidence: ["suggestion_report_path: /Users/sakki/.bypass/suggestion/demo-with-knowledge-update.md"]
+          }
+        ],
+        suggestions: {
+          session_id: "demo-with-knowledge-update",
+          summary: "Found 1 possible knowledge update(s).",
+          suggestions: [
+            {
+              id: "sug_demo_1",
+              kind: "project_convention",
+              confidence: "medium",
+              target: "/Users/sakki/Documents/evo-bypass/.bypass/knowledge.md",
+              evidence: ["evt_demo_collect"],
+              proposed_text: "Project convention: keep hook reports readable and put full suggestion details in a separate report path.",
+              rationale: "The session included explicit convention evidence that may affect future work in this repository."
+            }
+          ],
+          suggestion_report_path: "/Users/sakki/.bypass/suggestion/demo-with-knowledge-update.md"
+        },
+        reviewerLog: "Found 1 possible knowledge update(s)."
+      },
+      {
+        id: "019e772d-f237-7511-9a6d-43bd26e8f336",
+        metadata: {
+          session_id: "019e772d-f237-7511-9a6d-43bd26e8f336",
+          created_at: "2026-05-30T14:03:50.256Z",
+          runtime: "codex",
+          working_directory: "/Users/sakki/Documents/evo-bypass",
+          original_prompt: "叫做 evo-bypass-plugin，创建一个 repo 并提交",
+          plugin_version: "0.1.0"
+        },
+        events: [
+          event("evt_sample_1", "019e772d-f237-7511-9a6d-43bd26e8f336", "2026-05-30T14:03:50.257Z", "UserPromptSubmit", "UserPrompt", "User submitted the task prompt", "unknown", [], []),
+          event("evt_sample_2", "019e772d-f237-7511-9a6d-43bd26e8f336", "2026-05-30T14:04:44.402Z", "PostToolUse", "Bash", "Bash ran command: npm test", "success", ["project_convention"], ["npm test", "Project convention: keep hook reports readable."]),
+          event("evt_sample_3", "019e772d-f237-7511-9a6d-43bd26e8f336", "2026-05-30T14:05:11.014Z", "PostToolUse", "Bash", "Bash ran command: git commit -m \"feat: scaffold evo bypass plugin\"", "success", [], ["git commit -m \"feat: scaffold evo bypass plugin\""])
+        ],
+        eventCountOverride: 128,
+        suggestions: {
+          session_id: "019e772d-f237-7511-9a6d-43bd26e8f336",
+          summary: "No durable knowledge updates suggested for this session.",
+          suggestions: []
+        },
+        reviewerLog: "No durable knowledge updates suggested for this session."
+      },
+      {
+        id: "019e7922-bd17-79e3-b0b3-efdf3cf91dc2",
+        metadata: {
+          session_id: "019e7922-bd17-79e3-b0b3-efdf3cf91dc2",
+          created_at: "2026-05-30T14:04:21.454Z",
+          runtime: "codex",
+          working_directory: "/Users/sakki/Documents/evo-bypass",
+          original_prompt: "好的",
+          plugin_version: "0.1.0"
+        },
+        events: [
+          event("evt_sample_4", "019e7922-bd17-79e3-b0b3-efdf3cf91dc2", "2026-05-30T14:04:21.456Z", "UserPromptSubmit", "UserPrompt", "User submitted the task prompt", "unknown", [], []),
+          event("evt_sample_5", "019e7922-bd17-79e3-b0b3-efdf3cf91dc2", "2026-05-30T14:06:18.390Z", "PostToolUse", "Bash", "Bash ran command: rg --files", "unknown", [], ["rg --files"]),
+          event("evt_sample_6", "019e7922-bd17-79e3-b0b3-efdf3cf91dc2", "2026-05-30T14:07:41.009Z", "PostToolUse", "Bash", "Bash ran command: sed -n '1,260p' src/collect-event.js", "unknown", [], ["sed -n '1,260p' src/collect-event.js"])
+        ],
+        eventCountOverride: 38,
+        suggestions: {
+          session_id: "019e7922-bd17-79e3-b0b3-efdf3cf91dc2",
+          summary: "No durable knowledge updates suggested for this session.",
+          suggestions: []
+        },
+        reviewerLog: "No durable knowledge updates suggested for this session."
+      },
+      {
+        id: "019e7923-334b-7750-a338-f8ee96ca0af5",
+        metadata: {
+          session_id: "019e7923-334b-7750-a338-f8ee96ca0af5",
+          created_at: "2026-05-30T13:47:05.838Z",
+          runtime: "codex",
+          working_directory: "/Users/sakki/Documents/evo-bypass",
+          original_prompt: "# Overview\\n\\nGenerate 0 to 3 hyperpersonalized suggestions for what this user can do with Codex in this local project: /Users/sakki/Documents/evo-bypass\\n\\nUse recent Codex threads from this project primarily to avoid suggesting work the user is already doing and infer how they use Codex.",
+          plugin_version: "0.1.0"
+        },
+        events: [
+          event("evt_real_1", "019e7923-334b-7750-a338-f8ee96ca0af5", "2026-05-30T13:47:05.804Z", "SessionStart", "Other", "Other completed SessionStart", "unknown", [], []),
+          event("evt_real_2", "019e7923-334b-7750-a338-f8ee96ca0af5", "2026-05-30T13:47:05.839Z", "UserPromptSubmit", "UserPrompt", "User submitted the task prompt", "unknown", [], []),
+          event("evt_real_3", "019e7923-334b-7750-a338-f8ee96ca0af5", "2026-05-30T13:48:51.640Z", "PostToolUse", "Bash", "Bash ran command: sed -n '1,220p' /Users/sakki/.codex/plugins/cache/openai-curated/superpowers/fef63ecf/skills/using-superpowers/SKILL.md", "unknown", [], ["sed -n '1,220p' /Users/sakki/.codex/plugins/cache/openai-curated/superpowers/fef63ecf/skills/using-superpowers/SKILL.md"]),
+          event("evt_real_4", "019e7923-334b-7750-a338-f8ee96ca0af5", "2026-05-30T13:50:09.228Z", "PostToolUse", "Bash", "Bash ran command: rg -n \"suggestion_report_path|suggestion/|suggestions/|.bypass/sessions|knowledge update\" -S .", "unknown", [], ["rg -n \"suggestion_report_path|suggestion/|suggestions/|.bypass/sessions|knowledge update\" -S ."])
+        ],
+        eventCountOverride: 32,
+        suggestions: {
+          session_id: "019e7923-334b-7750-a338-f8ee96ca0af5",
+          summary: "No durable knowledge updates suggested for this session.",
+          suggestions: []
+        },
+        reviewerLog: "No durable knowledge updates suggested for this session."
+      }
+    ];
+
+    function event(id, sessionId, timestamp, hook, tool, summary, status, signals, evidence) {
+      return {
+        id,
+        session_id: sessionId,
+        timestamp,
+        hook,
+        tool,
+        summary,
+        paths: [],
+        status,
+        signals,
+        evidence
+      };
+    }
+
+    const state = {
+      query: "",
+      runtime: "all",
+      suggestions: "all",
+      selectedEventId: null
+    };
+
+    const nodes = {
+      listRoute: document.getElementById("listRoute"),
+      detailRoute: document.getElementById("detailRoute"),
+      sessionRows: document.getElementById("sessionRows"),
+      searchInput: document.getElementById("searchInput"),
+      runtimeFilter: document.getElementById("runtimeFilter"),
+      suggestionFilter: document.getElementById("suggestionFilter"),
+      listMetrics: document.getElementById("listMetrics"),
+      detailMetrics: document.getElementById("detailMetrics"),
+      detailSubtitle: document.getElementById("detailSubtitle"),
+      runtimePill: document.getElementById("runtimePill"),
+      metadataPanel: document.getElementById("metadataPanel"),
+      timeline: document.getElementById("timeline"),
+      timelineCount: document.getElementById("timelineCount"),
+      suggestionsPanel: document.getElementById("suggestionsPanel"),
+      suggestionCount: document.getElementById("suggestionCount"),
+      selectedEventPanel: document.getElementById("selectedEventPanel"),
+      reviewerPanel: document.getElementById("reviewerPanel"),
+      railStats: document.getElementById("railStats")
+    };
+
+    nodes.searchInput.addEventListener("input", (event) => {
+      state.query = event.target.value.trim().toLowerCase();
+      renderList();
+    });
+
+    nodes.runtimeFilter.addEventListener("change", (event) => {
+      state.runtime = event.target.value;
+      renderList();
+    });
+
+    nodes.suggestionFilter.addEventListener("change", (event) => {
+      state.suggestions = event.target.value;
+      renderList();
+    });
+
+    window.addEventListener("hashchange", renderRoute);
+
+    function sessionSignals(session) {
+      return [...new Set(session.events.flatMap((item) => item.signals || []))];
+    }
+
+    function visibleEventCount(session) {
+      return session.eventCountOverride || session.events.length;
+    }
+
+    function sessionFailures(session) {
+      return session.events.filter((item) => item.status === "failure").length;
+    }
+
+    function suggestionCount(session) {
+      return session.suggestions.suggestions.length;
+    }
+
+    function formatDate(value) {
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) return value;
+      return new Intl.DateTimeFormat("zh-CN", {
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false
+      }).format(date);
+    }
+
+    function formatTime(value) {
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) return value;
+      return date.toISOString().slice(11, 19);
+    }
+
+    function escapeHtml(value) {
+      return String(value ?? "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+    }
+
+    function pill(text, tone = "") {
+      return `<span class="pill ${tone}">${escapeHtml(text)}</span>`;
+    }
+
+    function metric(label, value) {
+      return `<div class="metric"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`;
+    }
+
+    function renderRailStats() {
+      const totalEvents = sessions.reduce((sum, item) => sum + visibleEventCount(item), 0);
+      const totalSuggestions = sessions.reduce((sum, item) => sum + suggestionCount(item), 0);
+      nodes.railStats.innerHTML = `
+        <div class="rail-label">Current index</div>
+        <div class="rail-stat"><span>Sessions</span><strong>${sessions.length}</strong></div>
+        <div class="rail-stat"><span>Hook events</span><strong>${totalEvents}</strong></div>
+        <div class="rail-stat"><span>Suggestions</span><strong>${totalSuggestions}</strong></div>
+        <div class="rail-stat"><span>Runtime</span><strong>web</strong></div>
+      `;
+    }
+
+    function filteredSessions() {
+      return sessions.filter((session) => {
+        const haystack = [
+          session.id,
+          session.metadata.runtime,
+          session.metadata.original_prompt,
+          sessionSignals(session).join(" ")
+        ].join(" ").toLowerCase();
+        const matchesQuery = !state.query || haystack.includes(state.query);
+        const matchesRuntime = state.runtime === "all" || session.metadata.runtime === state.runtime;
+        const hasSuggestions = suggestionCount(session) > 0;
+        const matchesSuggestions = state.suggestions === "all" || (state.suggestions === "with" ? hasSuggestions : !hasSuggestions);
+        return matchesQuery && matchesRuntime && matchesSuggestions;
+      });
+    }
+
+    function renderList() {
+      const rows = filteredSessions();
+      const totalEvents = rows.reduce((sum, item) => sum + visibleEventCount(item), 0);
+      const totalSuggestions = rows.reduce((sum, item) => sum + suggestionCount(item), 0);
+      const totalSignals = [...new Set(rows.flatMap(sessionSignals))].length;
+      nodes.listMetrics.innerHTML = [
+        metric("sessions", rows.length),
+        metric("events", totalEvents),
+        metric("knowledge suggestions", totalSuggestions),
+        metric("signal types", totalSignals),
+        metric("failures", rows.reduce((sum, item) => sum + sessionFailures(item), 0))
+      ].join("");
+
+      nodes.sessionRows.innerHTML = rows.map((session) => {
+        const signals = sessionSignals(session);
+        const suggestions = suggestionCount(session);
+        const tone = suggestions > 0 ? "good" : "";
+        return `
+          <tr class="session-row" onclick="location.hash = '#/sessions/${session.id}'">
+            <td>
+              <div class="mono">${escapeHtml(session.id)}</div>
+              <div class="prompt-preview">${escapeHtml(session.metadata.original_prompt)}</div>
+            </td>
+            <td><span class="mono">${escapeHtml(formatDate(session.metadata.created_at))}</span></td>
+            <td>${pill(session.metadata.runtime)}</td>
+            <td>
+              <div class="mono">${visibleEventCount(session)} events</div>
+              <div class="muted">${sessionFailures(session)} failure</div>
+            </td>
+            <td><div class="pill-row">${signals.length ? signals.map((item) => pill(item, item.includes("failure") ? "bad" : "warn")).join("") : pill("none")}</div></td>
+            <td><div class="pill-row">${pill(`${suggestions} suggestion${suggestions === 1 ? "" : "s"}`, tone)}${session.fixture ? pill("demo fixture", "warn") : ""}</div></td>
+          </tr>
+        `;
+      }).join("");
+    }
+
+    function renderRoute() {
+      const hash = location.hash || "#/sessions";
+      const match = hash.match(/^#\/sessions\/(.+)$/);
+      if (!match) {
+        nodes.listRoute.classList.add("active");
+        nodes.detailRoute.classList.remove("active");
+        renderList();
+        return;
+      }
+
+      const session = sessions.find((item) => item.id === decodeURIComponent(match[1]));
+      if (!session) {
+        location.hash = "#/sessions";
+        return;
+      }
+
+      nodes.listRoute.classList.remove("active");
+      nodes.detailRoute.classList.add("active");
+      renderDetail(session);
+    }
+
+    function renderDetail(session) {
+      if (!session.events.some((item) => item.id === state.selectedEventId)) {
+        state.selectedEventId = session.events[0]?.id || null;
+      }
+
+      nodes.detailSubtitle.innerHTML = `<span class="mono">${escapeHtml(session.id)}</span>`;
+      nodes.runtimePill.textContent = session.metadata.runtime;
+      nodes.detailMetrics.innerHTML = [
+        metric("events", visibleEventCount(session)),
+        metric("failures", sessionFailures(session)),
+        metric("signals", sessionSignals(session).length),
+        metric("suggestions", suggestionCount(session)),
+        metric("version", session.metadata.plugin_version)
+      ].join("");
+
+      nodes.metadataPanel.innerHTML = `
+        <div class="meta-grid">
+          ${kv("session_id", session.metadata.session_id)}
+          ${kv("created_at", session.metadata.created_at)}
+          ${kv("runtime", session.metadata.runtime)}
+          ${kv("plugin_version", session.metadata.plugin_version)}
+          ${kv("working_directory", session.metadata.working_directory)}
+          ${kv("source", session.fixture ? "prototype demo fixture" : ".bypass/sessions sample")}
+        </div>
+        <details class="prompt">
+          <summary>查看 original_prompt</summary>
+          <pre>${escapeHtml(session.metadata.original_prompt)}</pre>
+        </details>
+      `;
+
+      nodes.timelineCount.textContent = `${session.events.length} shown / ${visibleEventCount(session)} captured`;
+      nodes.timeline.innerHTML = session.events.map((eventItem) => {
+        const active = eventItem.id === state.selectedEventId ? "style=\"border-color: var(--accent); background: #f4fffb\"" : "";
+        return `
+          <article class="event" ${active}>
+            <div class="event-time">
+              <div>${escapeHtml(formatTime(eventItem.timestamp))}</div>
+              <div>${escapeHtml(eventItem.hook)}</div>
+              <div class="muted">${escapeHtml(eventItem.status)}</div>
+            </div>
+            <div class="event-main">
+              <p class="event-summary">${escapeHtml(eventItem.summary)}</p>
+              <div class="event-actions">
+                ${pill(eventItem.tool)}
+                ${eventItem.signals.map((item) => pill(item, item.includes("failure") ? "bad" : "warn")).join("")}
+                ${eventItem.paths.length ? pill(`${eventItem.paths.length} path`) : ""}
+                <button class="mini-button" onclick="selectEvent('${eventItem.id}')">Inspect</button>
+              </div>
+            </div>
+          </article>
+        `;
+      }).join("");
+
+      renderSuggestions(session);
+      renderSelectedEvent(session);
+      nodes.reviewerPanel.innerHTML = `<pre>${escapeHtml(session.reviewerLog || "No reviewer log captured.")}</pre>`;
+    }
+
+    function kv(label, value) {
+      return `<div class="kv"><span>${escapeHtml(label)}</span><strong class="mono">${escapeHtml(value)}</strong></div>`;
+    }
+
+    function renderSuggestions(session) {
+      const suggestions = session.suggestions.suggestions;
+      nodes.suggestionCount.textContent = session.suggestions.summary;
+      if (!suggestions.length) {
+        nodes.suggestionsPanel.innerHTML = `<div class="empty">本次任务没有可沉淀的知识建议。主 agent 可以直接结束，不需要打断用户确认。</div>`;
+        return;
+      }
+
+      nodes.suggestionsPanel.innerHTML = suggestions.map((suggestion) => `
+        <article class="suggestion">
+          <div class="pill-row">
+            ${pill(suggestion.kind, "good")}
+            ${pill(suggestion.confidence)}
+            ${pill(suggestion.id)}
+          </div>
+          <h3>${escapeHtml(suggestion.proposed_text)}</h3>
+          <div class="focus-box">${escapeHtml(suggestion.target)}</div>
+          <p>${escapeHtml(suggestion.rationale)}</p>
+          <p class="mono">Evidence: ${escapeHtml(suggestion.evidence.join(", "))}</p>
+        </article>
+      `).join("");
+    }
+
+    window.selectEvent = function selectEvent(id) {
+      state.selectedEventId = id;
+      const sessionId = (location.hash.match(/^#\/sessions\/(.+)$/) || [])[1];
+      const session = sessions.find((item) => item.id === decodeURIComponent(sessionId || ""));
+      if (session) {
+        renderDetail(session);
+      }
+    };
+
+    function renderSelectedEvent(session) {
+      const selected = session.events.find((item) => item.id === state.selectedEventId);
+      if (!selected) {
+        nodes.selectedEventPanel.innerHTML = `<div class="empty">选择一个 hook event 查看完整字段。</div>`;
+        return;
+      }
+
+      nodes.selectedEventPanel.innerHTML = `
+        <div class="pill-row">
+          ${pill(selected.hook)}
+          ${pill(selected.status, selected.status === "failure" ? "bad" : selected.status === "success" ? "good" : "")}
+          ${pill(selected.tool)}
+        </div>
+        <pre>${escapeHtml(JSON.stringify(selected, null, 2))}</pre>
+      `;
+    }
+
+    renderRailStats();
+    renderRoute();
+  </script>
+</body>
+</html>

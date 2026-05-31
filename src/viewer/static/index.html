@@ -1,0 +1,252 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Evo Bypass Session Reviewer</title>
+  <style>
+    :root {
+      --bg: #f6f5f1;
+      --panel: #fff;
+      --panel-2: #fdfbf6;
+      --ink: #202527;
+      --muted: #667174;
+      --line: #d9d5c9;
+      --accent: #087a6f;
+      --accent-soft: #dff3ee;
+      --warn-soft: #f5e4c8;
+      --bad-soft: #f3d9d5;
+      --mono: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+      --serif: Georgia, "Times New Roman", serif;
+      --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--sans); }
+    .shell { min-height: 100vh; display: grid; grid-template-columns: 260px minmax(0, 1fr); }
+    aside { border-right: 1px solid var(--line); background: #efede5; padding: 24px 18px; }
+    main { min-width: 0; padding: 28px; }
+    h1 { margin: 0; font-family: var(--serif); font-size: clamp(32px, 4vw, 54px); line-height: 1; font-weight: 500; }
+    .brand { font-family: var(--serif); font-size: 24px; line-height: 1.1; }
+    .brand small, .subtitle, .muted { color: var(--muted); }
+    .brand small { display: block; margin-top: 8px; font-family: var(--sans); font-size: 12px; line-height: 1.45; }
+    .rail-section { border-top: 1px solid var(--line); margin-top: 18px; padding-top: 16px; }
+    .rail-label, th, .panel-title, .metric span, .kv span { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .07em; }
+    .rail-stat { display: grid; grid-template-columns: 1fr auto; gap: 10px; padding: 8px 0; font-size: 13px; }
+    .topbar { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin-bottom: 22px; }
+    .subtitle { margin: 10px 0 0; max-width: 760px; line-height: 1.55; font-size: 14px; }
+    .button { border: 1px solid #b9b6aa; color: var(--ink); background: transparent; min-height: 36px; padding: 7px 11px; border-radius: 6px; text-decoration: none; white-space: nowrap; }
+    .toolbar, .metrics { display: grid; gap: 10px; margin: 18px 0; }
+    .toolbar { grid-template-columns: minmax(220px, 1fr) 150px 170px; }
+    .metrics { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+    input, select { border: 1px solid var(--line); background: var(--panel); min-height: 40px; padding: 8px 10px; border-radius: 6px; font: inherit; }
+    .metric, .panel, .table-wrap { border: 1px solid var(--line); background: var(--panel); }
+    .metric { min-height: 78px; padding: 12px; }
+    .metric strong { display: block; margin-top: 8px; font-family: var(--mono); font-size: 24px; }
+    table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+    th, td { padding: 13px 12px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; font-size: 13px; }
+    th { background: var(--panel-2); }
+    tr[data-session] { cursor: pointer; }
+    tr[data-session]:hover td { background: #fbf9f0; }
+    .mono { font-family: var(--mono); font-size: 12px; overflow-wrap: anywhere; }
+    .preview { color: var(--muted); line-height: 1.45; margin-top: 4px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+    .pill-row { display: flex; flex-wrap: wrap; gap: 6px; }
+    .pill { display: inline-flex; align-items: center; min-height: 22px; padding: 2px 7px; border: 1px solid var(--line); background: #f7f6f0; border-radius: 999px; font-size: 11px; color: var(--muted); }
+    .good { background: var(--accent-soft); color: #075d55; border-color: #a9d7ce; }
+    .warn { background: var(--warn-soft); color: #75460b; border-color: #e0c089; }
+    .bad { background: var(--bad-soft); color: #74302c; border-color: #e0aaa5; }
+    .detail { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 16px; align-items: start; }
+    .panel { margin-bottom: 16px; }
+    .panel-head { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; padding: 13px 14px; border-bottom: 1px solid var(--line); background: var(--panel-2); }
+    .panel-body { padding: 14px; }
+    .meta-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+    .kv strong { display: block; margin-top: 5px; font-size: 13px; overflow-wrap: anywhere; }
+    details { border-top: 1px solid var(--line); margin-top: 14px; padding-top: 10px; }
+    summary { cursor: pointer; color: var(--accent); font-size: 13px; }
+    pre { margin: 10px 0 0; padding: 12px; overflow: auto; max-height: 280px; background: #171b1c; color: #eef2ed; font-family: var(--mono); font-size: 11px; line-height: 1.55; border-radius: 4px; white-space: pre-wrap; overflow-wrap: anywhere; }
+    .timeline { display: grid; gap: 8px; }
+    .event { display: grid; grid-template-columns: 128px minmax(0, 1fr); gap: 12px; border: 1px solid var(--line); padding: 10px; background: #fff; }
+    .event.active { border-color: var(--accent); background: #f4fffb; }
+    .event-time { color: var(--muted); font-family: var(--mono); font-size: 11px; line-height: 1.5; }
+    .event-summary { margin: 0 0 8px; font-size: 13px; line-height: 1.45; overflow-wrap: anywhere; }
+    .mini { border: 1px solid var(--line); background: #f8f7f1; min-height: 26px; padding: 3px 8px; border-radius: 4px; font-size: 12px; cursor: pointer; }
+    .suggestion { border: 1px solid var(--line); padding: 12px; margin-bottom: 10px; background: #fff; }
+    .suggestion h3 { margin: 9px 0 8px; font-size: 15px; line-height: 1.35; }
+    .suggestion p { margin: 8px 0 0; color: var(--muted); font-size: 13px; line-height: 1.5; }
+    .focus { border-left: 3px solid var(--accent); background: #f0faf7; padding: 10px 11px; font-family: var(--mono); font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
+    .empty { color: var(--muted); padding: 18px; border: 1px dashed #b9b6aa; background: #fbfaf5; font-size: 13px; line-height: 1.55; }
+    .route { display: none; }
+    .route.active { display: block; }
+    @media (max-width: 980px) {
+      .shell, .toolbar, .metrics, .detail, .meta-grid, .event { grid-template-columns: 1fr; }
+      aside { border-right: 0; border-bottom: 1px solid var(--line); }
+      .topbar { display: grid; }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <aside>
+      <div class="brand">Evo Bypass<small>Runtime session review surface for hook records, evidence snippets, and knowledge suggestions.</small></div>
+      <div class="rail-section"><div class="rail-label">Workspace</div><div class="mono" id="workspace">Loading...</div></div>
+      <div class="rail-section" id="railStats"></div>
+    </aside>
+    <main>
+      <section id="listRoute" class="route active">
+        <div class="topbar">
+          <div><h1>Session records</h1><p class="subtitle">任务结束时打开的旁路观察台。用 session_id 追踪每次主 agent 会话，快速判断这次是否产生了可沉淀的知识更新。</p></div>
+        </div>
+        <div class="metrics" id="listMetrics"></div>
+        <div class="toolbar">
+          <input id="searchInput" type="search" placeholder="搜索 session_id、prompt、signal">
+          <select id="runtimeFilter"><option value="all">全部 runtime</option><option value="codex">codex</option><option value="claude">claude</option></select>
+          <select id="suggestionFilter"><option value="all">全部建议状态</option><option value="with">有知识建议</option><option value="without">无知识建议</option></select>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th style="width:30%">session_id</th><th style="width:14%">created_at</th><th style="width:10%">runtime</th><th style="width:14%">events</th><th style="width:17%">signals</th><th style="width:15%">suggestions</th></tr></thead>
+            <tbody id="sessionRows"><tr><td colspan="6" class="empty">Loading sessions...</td></tr></tbody>
+          </table>
+        </div>
+      </section>
+      <section id="detailRoute" class="route">
+        <div class="topbar"><div><h1>Session detail</h1><p class="subtitle" id="detailSubtitle"></p></div><a class="button" href="/sessions">返回列表</a></div>
+        <div class="metrics" id="detailMetrics"></div>
+        <div class="detail">
+          <div>
+            <section class="panel"><div class="panel-head"><h2 class="panel-title">Metadata</h2><span class="pill" id="runtimePill"></span></div><div class="panel-body" id="metadataPanel"></div></section>
+            <section class="panel"><div class="panel-head"><h2 class="panel-title">Hook timeline</h2><span class="muted" id="timelineCount"></span></div><div class="panel-body"><div class="timeline" id="timeline"></div></div></section>
+          </div>
+          <aside>
+            <section class="panel"><div class="panel-head"><h2 class="panel-title">Suggestions</h2><span class="muted" id="suggestionCount"></span></div><div class="panel-body" id="suggestionsPanel"></div></section>
+            <section class="panel"><div class="panel-head"><h2 class="panel-title">Selected event</h2></div><div class="panel-body" id="selectedEventPanel"></div></section>
+            <section class="panel"><div class="panel-head"><h2 class="panel-title">Reviewer log</h2></div><div class="panel-body" id="reviewerPanel"></div></section>
+          </aside>
+        </div>
+      </section>
+    </main>
+  </div>
+  <script>
+    const state = { sessions: [], detail: null, query: "", runtime: "all", suggestions: "all", selectedEventId: null };
+    const nodes = Object.fromEntries(["workspace","railStats","listRoute","detailRoute","sessionRows","searchInput","runtimeFilter","suggestionFilter","listMetrics","detailMetrics","detailSubtitle","runtimePill","metadataPanel","timeline","timelineCount","suggestionsPanel","suggestionCount","selectedEventPanel","reviewerPanel"].map((id) => [id, document.getElementById(id)]));
+
+    nodes.searchInput.addEventListener("input", (event) => { state.query = event.target.value.trim().toLowerCase(); renderList(); });
+    nodes.runtimeFilter.addEventListener("change", (event) => { state.runtime = event.target.value; renderList(); });
+    nodes.suggestionFilter.addEventListener("change", (event) => { state.suggestions = event.target.value; renderList(); });
+    window.addEventListener("popstate", renderRoute);
+    document.addEventListener("click", (event) => {
+      const row = event.target.closest("[data-session]");
+      if (row) { event.preventDefault(); history.pushState({}, "", `/sessions/${encodeURIComponent(row.dataset.session)}`); renderRoute(); }
+      const inspect = event.target.closest("[data-event]");
+      if (inspect) { state.selectedEventId = inspect.dataset.event; renderDetail(); }
+    });
+
+    async function api(path) {
+      const response = await fetch(path);
+      if (!response.ok) throw new Error(`${path} returned ${response.status}`);
+      return response.json();
+    }
+
+    async function loadList() {
+      const data = await api("/api/sessions");
+      state.sessions = data.sessions || [];
+      nodes.workspace.textContent = data.root || "";
+      renderRailStats();
+      renderList();
+    }
+
+    async function loadDetail(sessionId) {
+      state.detail = null;
+      state.selectedEventId = null;
+      nodes.timeline.innerHTML = `<div class="empty">Loading session detail...</div>`;
+      state.detail = await api(`/api/sessions/${encodeURIComponent(sessionId)}`);
+      renderDetail();
+    }
+
+    async function renderRoute() {
+      const match = location.pathname.match(/^\/sessions\/([^/]+)$/);
+      if (match) {
+        nodes.listRoute.classList.remove("active");
+        nodes.detailRoute.classList.add("active");
+        await loadDetail(decodeURIComponent(match[1]));
+      } else {
+        nodes.detailRoute.classList.remove("active");
+        nodes.listRoute.classList.add("active");
+        if (state.sessions.length === 0) await loadList();
+        else renderList();
+      }
+    }
+
+    function renderRailStats() {
+      const totalEvents = state.sessions.reduce((sum, item) => sum + item.event_count, 0);
+      const totalSuggestions = state.sessions.reduce((sum, item) => sum + item.suggestion_count, 0);
+      nodes.railStats.innerHTML = `<div class="rail-label">Current index</div>${rail("Sessions", state.sessions.length)}${rail("Hook events", totalEvents)}${rail("Suggestions", totalSuggestions)}${rail("Runtime", "web")}`;
+    }
+
+    function renderList() {
+      const rows = filteredSessions();
+      nodes.listMetrics.innerHTML = [metric("sessions", rows.length), metric("events", rows.reduce((sum, item) => sum + item.event_count, 0)), metric("knowledge suggestions", rows.reduce((sum, item) => sum + item.suggestion_count, 0)), metric("signal types", new Set(rows.flatMap((item) => item.signals)).size), metric("failures", rows.reduce((sum, item) => sum + item.failure_count, 0))].join("");
+      if (!rows.length) {
+        nodes.sessionRows.innerHTML = `<tr><td colspan="6"><div class="empty">没有匹配的 session。</div></td></tr>`;
+        return;
+      }
+      nodes.sessionRows.innerHTML = rows.map((session) => `<tr data-session="${escapeHtml(session.session_id)}"><td><div class="mono">${escapeHtml(session.session_id)}</div><div class="preview">${escapeHtml(session.prompt_preview)}</div></td><td><span class="mono">${escapeHtml(formatDate(session.created_at))}</span></td><td>${pill(session.runtime)}</td><td><div class="mono">${session.event_count} events</div><div class="muted">${session.failure_count} failure</div></td><td><div class="pill-row">${session.signals.length ? session.signals.map((item) => pill(item, item.includes("failure") ? "bad" : "warn")).join("") : pill("none")}</div></td><td>${pill(`${session.suggestion_count} suggestion${session.suggestion_count === 1 ? "" : "s"}`, session.suggestion_count > 0 ? "good" : "")}</td></tr>`).join("");
+    }
+
+    function renderDetail() {
+      const session = state.detail;
+      if (!session) return;
+      const events = session.events || [];
+      const metadata = session.metadata || {};
+      const suggestions = session.suggestions?.suggestions || [];
+      nodes.workspace.textContent = metadata.working_directory || nodes.workspace.textContent || "";
+      if (!events.some((item) => item.id === state.selectedEventId)) state.selectedEventId = events[0]?.id || null;
+      nodes.detailSubtitle.innerHTML = `<span class="mono">${escapeHtml(session.session_id)}</span>`;
+      nodes.runtimePill.textContent = metadata.runtime || "unknown";
+      nodes.detailMetrics.innerHTML = [metric("events", events.length), metric("failures", events.filter((item) => item.status === "failure").length), metric("signals", new Set(events.flatMap((item) => item.signals || [])).size), metric("suggestions", suggestions.length), metric("malformed", session.malformedEventCount || 0)].join("");
+      nodes.metadataPanel.innerHTML = `<div class="meta-grid">${kv("session_id", metadata.session_id || session.session_id)}${kv("created_at", metadata.created_at)}${kv("runtime", metadata.runtime)}${kv("plugin_version", metadata.plugin_version)}${kv("working_directory", metadata.working_directory)}${kv("source", ".bypass/sessions")}</div><details><summary>查看 original_prompt</summary><pre>${escapeHtml(metadata.original_prompt || "")}</pre></details>`;
+      nodes.timelineCount.textContent = `${events.length} captured`;
+      nodes.timeline.innerHTML = events.length ? events.map((eventItem) => `<article class="event ${eventItem.id === state.selectedEventId ? "active" : ""}"><div class="event-time"><div>${escapeHtml(formatTime(eventItem.timestamp))}</div><div>${escapeHtml(eventItem.hook)}</div><div>${escapeHtml(eventItem.status)}</div></div><div><p class="event-summary">${escapeHtml(eventItem.summary)}</p><div class="pill-row">${pill(eventItem.tool)}${(eventItem.signals || []).map((item) => pill(item, item.includes("failure") ? "bad" : "warn")).join("")}${(eventItem.paths || []).length ? pill(`${eventItem.paths.length} path`) : ""}<button class="mini" data-event="${escapeHtml(eventItem.id)}">Inspect</button></div></div></article>`).join("") : `<div class="empty">这个 session 没有 event 记录。</div>`;
+      renderSuggestions(session);
+      renderSelectedEvent(session);
+      nodes.reviewerPanel.innerHTML = `<pre>${escapeHtml(session.reviewerLog || "No reviewer log captured.")}</pre>`;
+    }
+
+    function renderSuggestions(session) {
+      const suggestions = session.suggestions?.suggestions || [];
+      nodes.suggestionCount.textContent = session.suggestions?.summary || "";
+      if (!suggestions.length) {
+        nodes.suggestionsPanel.innerHTML = `<div class="empty">本次任务没有可沉淀的知识建议。主 agent 可以直接结束，不需要打断用户确认。</div>`;
+        return;
+      }
+      nodes.suggestionsPanel.innerHTML = suggestions.map((suggestion) => `<article class="suggestion"><div class="pill-row">${pill(suggestion.kind, "good")}${pill(suggestion.confidence)}${pill(suggestion.id)}</div><h3>${escapeHtml(suggestion.proposed_text)}</h3><div class="focus">${escapeHtml(suggestion.target)}</div><p>${escapeHtml(suggestion.rationale)}</p><p class="mono">Evidence: ${escapeHtml((suggestion.evidence || []).join(", "))}</p></article>`).join("");
+    }
+
+    function renderSelectedEvent(session) {
+      const selected = (session.events || []).find((item) => item.id === state.selectedEventId);
+      if (!selected) { nodes.selectedEventPanel.innerHTML = `<div class="empty">选择一个 hook event 查看完整字段。</div>`; return; }
+      nodes.selectedEventPanel.innerHTML = `<div class="pill-row">${pill(selected.hook)}${pill(selected.status, selected.status === "failure" ? "bad" : selected.status === "success" ? "good" : "")}${pill(selected.tool)}</div><pre>${escapeHtml(JSON.stringify(selected, null, 2))}</pre>`;
+    }
+
+    function filteredSessions() {
+      return state.sessions.filter((session) => {
+        const haystack = [session.session_id, session.runtime, session.prompt_preview, (session.signals || []).join(" ")].join(" ").toLowerCase();
+        return (!state.query || haystack.includes(state.query))
+          && (state.runtime === "all" || session.runtime === state.runtime)
+          && (state.suggestions === "all" || (state.suggestions === "with" ? session.suggestion_count > 0 : session.suggestion_count === 0));
+      });
+    }
+
+    function rail(label, value) { return `<div class="rail-stat"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`; }
+    function metric(label, value) { return `<div class="metric"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`; }
+    function kv(label, value) { return `<div class="kv"><span>${escapeHtml(label)}</span><strong class="mono">${escapeHtml(value || "")}</strong></div>`; }
+    function pill(text, tone = "") { return `<span class="pill ${tone}">${escapeHtml(text || "unknown")}</span>`; }
+    function formatDate(value) { const date = new Date(value); return Number.isNaN(date.getTime()) ? value : new Intl.DateTimeFormat("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false }).format(date); }
+    function formatTime(value) { const date = new Date(value); return Number.isNaN(date.getTime()) ? value : date.toISOString().slice(11, 19); }
+    function escapeHtml(value) { return String(value ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#039;"); }
+
+    renderRoute().catch((error) => {
+      nodes.sessionRows.innerHTML = `<tr><td colspan="6"><div class="empty">${escapeHtml(error.message)}</div></td></tr>`;
+    });
+  </script>
+</body>
+</html>

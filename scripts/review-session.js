@@ -1,5 +1,12 @@
 #!/usr/bin/env node
+import path from 'node:path';
+import { spawn, spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import { reviewSession } from '../src/review-session.js';
+import { readBypassConfig, shouldExposeViewer } from '../src/core/config.js';
+import { viewerUrl } from '../src/viewer/server.js';
+
+const repoRoot = fileURLToPath(new URL('..', import.meta.url));
 
 const input = await readStdin();
 let payload = {};
@@ -25,7 +32,8 @@ if (!sessionId) {
 
 const root = payload.cwd || payload.working_directory || payload.workspace || process.cwd();
 const result = await reviewSession({ root, sessionId });
-const report = formatReport(result);
+const viewerResult = await maybeStartViewer({ root, sessionId, suggestionCount: result.suggestions.length });
+const report = formatReport(result, viewerResult);
 if (isCodexRuntime(payload)) {
   console.log(JSON.stringify({
     continue: result.suggestions.length === 0,
@@ -70,10 +78,76 @@ function isCodexRuntime(payload) {
   return payload.runtime === 'codex';
 }
 
-function formatReport(result) {
-  if (result.suggestions.length === 0) {
-    return '本次任务无待更新知识。';
+async function maybeStartViewer({ root, sessionId, suggestionCount }) {
+  const config = await readBypassConfig({ root });
+  if (!shouldExposeViewer({ viewer: config.viewer, suggestionCount })) {
+    return undefined;
   }
 
-  return `请告知用户：本次任务总结了可更新知识或记忆。请阅读 ${result.suggestion_report_path} 文件，了解根据本次任务总结的知识或记忆，并询问用户是否应用这些建议。`;
+  try {
+    const url = startViewerProcess({ root, sessionId, viewer: config.viewer });
+    return { url };
+  } catch (error) {
+    return { error: error.message || String(error) };
+  }
+}
+
+function startViewerProcess({ root, sessionId, viewer }) {
+  const viewerScript = process.env.EVO_BYPASS_VIEWER_SCRIPT || path.join(repoRoot, 'scripts', 'session-viewer.js');
+  const args = [
+    viewerScript,
+    '--root',
+    root,
+    '--host',
+    viewer.host,
+    '--port',
+    String(viewer.port),
+    '--session',
+    sessionId,
+    '--openMode',
+    viewer.openMode
+  ];
+
+  if (process.env.EVO_BYPASS_VIEWER_ONCE === '1') {
+    const result = spawnSync(process.execPath, [...args, '--once'], {
+      cwd: root,
+      encoding: 'utf8'
+    });
+    if (result.status !== 0) {
+      throw new Error(result.stderr.trim() || result.stdout.trim() || 'viewer exited with a non-zero status');
+    }
+    return result.stdout.trim().split(/\r?\n/).at(-1);
+  }
+
+  const child = spawn(process.execPath, args, {
+    cwd: root,
+    detached: true,
+    stdio: 'ignore'
+  });
+  child.unref();
+  return viewerUrl({ host: viewer.host, port: viewer.port, sessionId });
+}
+
+function formatReport(result, viewerResult) {
+  if (result.suggestions.length === 0) {
+    return withViewerReport('本次任务无待更新知识。', viewerResult);
+  }
+
+  return withViewerReport(
+    `请告知用户：本次任务总结了可更新知识或记忆。请阅读 ${result.suggestion_report_path} 文件，了解根据本次任务总结的知识或记忆，并询问用户是否应用这些建议。`,
+    viewerResult
+  );
+}
+
+function withViewerReport(report, viewerResult) {
+  if (!viewerResult) {
+    return report;
+  }
+  if (viewerResult.url) {
+    return `${report}\n\n会话查看器：${viewerResult.url}`;
+  }
+  if (viewerResult.error) {
+    return `${report}\n\n无法启动会话查看器：${viewerResult.error}`;
+  }
+  return report;
 }

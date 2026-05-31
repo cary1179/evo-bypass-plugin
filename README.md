@@ -1,5 +1,7 @@
 # Evo Bypass
 
+![Evo Bypass hero banner](docs/assets/readme/evo-bypass-hero.png)
+
 Evo Bypass is an advisory-first knowledge update helper for Claude Code and Codex.
 
 It runs beside the main agent through lifecycle hooks, records a compact log of what happened during a task, reviews that log when the task ends, and suggests local knowledge updates that may be useful for future work.
@@ -22,7 +24,11 @@ Evo Bypass stores session artifacts under the current workspace:
 
 The collector records summaries, paths, exit status, redacted evidence snippets, and signals such as test failures, dependency changes, and project conventions. It avoids storing large raw outputs and redacts common secret patterns before writing events.
 
+![Evo Bypass storage blueprint](docs/assets/readme/storage-blueprint.png)
+
 ## How It Works
+
+![From noisy session to durable memory](docs/assets/readme/noisy-session-to-memory.png)
 
 1. `UserPromptSubmit` creates session metadata.
 2. `PostToolUse` and `PostToolUseFailure` append redacted tool events.
@@ -50,7 +56,11 @@ Reviewer suggestions use these kinds:
 
 Each suggestion includes evidence ids, confidence, a target knowledge file, proposed text, and rationale.
 
+![Detected knowledge types](docs/assets/readme/detected-knowledge-types.png)
+
 ## Stop Hook Reports
+
+![Codex stop hook decision](docs/assets/readme/stop-hook-decision.png)
 
 When a completed session has possible knowledge updates, Evo Bypass writes the detailed review report to:
 
@@ -135,6 +145,8 @@ node scripts/apply-approved-update.js <session-id> <sug_1,sug_2> "user approved 
 ```
 
 The updater refuses to write unless approval is explicit. It also rejects unknown suggestion ids, duplicate approvals, unsafe target paths, malformed suggestions, and missing approval text.
+
+![No silent memory mutation](docs/assets/readme/no-silent-memory-mutation.png)
 
 ## Configure Knowledge Target
 

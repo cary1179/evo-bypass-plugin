@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
+import net from 'node:net';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -125,6 +126,96 @@ test('review-session CLI does not write markdown when there are no suggestions',
   assert.equal(output.continue, true);
   assert.equal(output.systemMessage, '本次任务无待更新知识。');
   await assert.rejects(fs.stat(path.join(bypassDir, 'suggestion', 'sess_codex_empty.md')), { code: 'ENOENT' });
+});
+
+test('review-session CLI includes viewer URL when configured and suggestions exist', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-'));
+  const bypassDir = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-home-'));
+  const port = await freePort();
+  await fs.mkdir(path.join(root, '.bypass'), { recursive: true });
+  await fs.writeFile(path.join(root, '.bypass', 'config.json'), `${JSON.stringify({
+    viewer: { enabled: true, openMode: 'url', port }
+  })}\n`);
+  await collectEvent({ root, payload: { hook_event_name: 'UserPromptSubmit', session_id: 'sess_viewer_url', prompt: 'hello' } });
+  await collectEvent({
+    root,
+    payload: {
+      hook_event_name: 'PostToolUse',
+      session_id: 'sess_viewer_url',
+      tool_name: 'Bash',
+      tool_response: { exit_code: 0, output: 'Project convention: open viewer only when useful.' }
+    }
+  });
+
+  const result = spawnSync(process.execPath, [reviewCliPath, '--runtime', 'codex'], {
+    cwd: root,
+    input: JSON.stringify({ session_id: 'sess_viewer_url', cwd: root }),
+    env: { ...process.env, EVO_BYPASS_DIR: bypassDir, EVO_BYPASS_VIEWER_ONCE: '1' },
+    encoding: 'utf8'
+  });
+
+  assert.equal(result.status, 0);
+  const output = JSON.parse(result.stdout);
+  assert.equal(output.continue, false);
+  assert.match(output.systemMessage, /http:\/\/127\.0\.0\.1:\d+\/sessions\/sess_viewer_url/);
+});
+
+test('review-session CLI skips viewer URL when configured but no suggestions exist', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-'));
+  const bypassDir = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-home-'));
+  const port = await freePort();
+  await fs.mkdir(path.join(root, '.bypass'), { recursive: true });
+  await fs.writeFile(path.join(root, '.bypass', 'config.json'), `${JSON.stringify({
+    viewer: { enabled: true, openMode: 'url', port, openOnlyWhenSuggestions: true }
+  })}\n`);
+  await collectEvent({ root, payload: { hook_event_name: 'UserPromptSubmit', session_id: 'sess_viewer_empty', prompt: 'hello' } });
+
+  const result = spawnSync(process.execPath, [reviewCliPath, '--runtime', 'codex'], {
+    cwd: root,
+    input: JSON.stringify({ session_id: 'sess_viewer_empty', cwd: root }),
+    env: { ...process.env, EVO_BYPASS_DIR: bypassDir, EVO_BYPASS_VIEWER_ONCE: '1' },
+    encoding: 'utf8'
+  });
+
+  assert.equal(result.status, 0);
+  const output = JSON.parse(result.stdout);
+  assert.equal(output.continue, true);
+  assert.doesNotMatch(output.systemMessage, /\/sessions\/sess_viewer_empty/);
+});
+
+test('review-session CLI keeps valid output when viewer startup fails', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-'));
+  const bypassDir = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-home-'));
+  await fs.mkdir(path.join(root, '.bypass'), { recursive: true });
+  await fs.writeFile(path.join(root, '.bypass', 'config.json'), `${JSON.stringify({
+    viewer: { enabled: true, openMode: 'url', port: 8765 }
+  })}\n`);
+  await collectEvent({
+    root,
+    payload: {
+      hook_event_name: 'PostToolUse',
+      session_id: 'sess_viewer_fail',
+      tool_name: 'Bash',
+      tool_response: { exit_code: 0, output: 'Project convention: viewer failures are non-blocking.' }
+    }
+  });
+
+  const result = spawnSync(process.execPath, [reviewCliPath, '--runtime', 'codex'], {
+    cwd: root,
+    input: JSON.stringify({ session_id: 'sess_viewer_fail', cwd: root }),
+    env: {
+      ...process.env,
+      EVO_BYPASS_DIR: bypassDir,
+      EVO_BYPASS_VIEWER_ONCE: '1',
+      EVO_BYPASS_VIEWER_SCRIPT: path.join(root, 'missing-viewer.js')
+    },
+    encoding: 'utf8'
+  });
+
+  assert.equal(result.status, 0);
+  const output = JSON.parse(result.stdout);
+  assert.equal(output.continue, false);
+  assert.match(output.systemMessage, /无法启动会话查看器/);
 });
 
 test('review-session CLI ignores malformed stdin JSON when a session arg is present', async () => {
@@ -257,6 +348,19 @@ async function appendRawEvent(root, sessionId, line) {
   const sessionDir = path.join(root, '.bypass', 'sessions', sessionId);
   await fs.mkdir(sessionDir, { recursive: true });
   await fs.appendFile(path.join(sessionDir, 'events.jsonl'), `${line}\n`);
+}
+
+async function freePort() {
+  const server = net.createServer();
+  await new Promise((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', resolve);
+  });
+  const { port } = server.address();
+  await new Promise((resolve, reject) => {
+    server.close((error) => error ? reject(error) : resolve());
+  });
+  return port;
 }
 
 function escapeRegExp(value) {

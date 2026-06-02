@@ -604,6 +604,152 @@ test('reviewSession uses rules fallback when AI retrospective shape is malformed
   }
 });
 
+test('reviewSession AI reviewer drops update_knowledge findings with unsafe relative targets', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-'));
+  await fs.mkdir(path.join(root, '.bypass'), { recursive: true });
+  const server = await startAiReviewServer(async () => ({
+    retrospective: {
+      outcome: 'completed',
+      quality: 'minor_issues',
+      findings: [{
+        id: 'finding_unsafe_target',
+        category: 'knowledge',
+        severity: 'medium',
+        evidence: ['evt_ai_unsafe_target'],
+        diagnosis: 'AI found a reusable convention.',
+        recommendation: 'Ask whether to save it.',
+        action: {
+          type: 'update_knowledge',
+          confidence: 'high',
+          target: '../outside.md',
+          proposed_text: 'Project convention: keep AI targets inside candidates.',
+          rationale: 'Future reviewer changes need strict target validation.'
+        }
+      }]
+    }
+  }));
+
+  try {
+    await writeAiReviewerConfig({ root, server });
+    await writeRawEvent(root, 'sess_ai_unsafe_target', {
+      id: 'evt_ai_unsafe_target',
+      session_id: 'sess_ai_unsafe_target',
+      timestamp: new Date().toISOString(),
+      hook: 'PostToolUse',
+      tool: 'Edit',
+      summary: 'Edit completed PostToolUse',
+      paths: [],
+      status: 'success',
+      signals: [],
+      evidence: ['Project convention: keep AI targets inside candidates.']
+    });
+
+    const result = await reviewSession({ root, sessionId: 'sess_ai_unsafe_target' });
+
+    assert.deepEqual(result.retrospective.findings, []);
+  } finally {
+    await server.close();
+  }
+});
+
+test('reviewSession AI reviewer drops absolute in-root targets that are not candidates', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-'));
+  await fs.mkdir(path.join(root, '.bypass'), { recursive: true });
+  const server = await startAiReviewServer(async () => ({
+    retrospective: {
+      outcome: 'completed',
+      quality: 'minor_issues',
+      findings: [{
+        id: 'finding_non_candidate_target',
+        category: 'knowledge',
+        severity: 'medium',
+        evidence: ['evt_ai_non_candidate_target'],
+        diagnosis: 'AI found a reusable convention.',
+        recommendation: 'Ask whether to save it.',
+        action: {
+          type: 'update_knowledge',
+          confidence: 'high',
+          target: path.join(root, 'NOT_A_CANDIDATE.md'),
+          proposed_text: 'Project convention: keep AI targets candidate-bound.',
+          rationale: 'Future reviewer changes need strict target validation.'
+        }
+      }]
+    }
+  }));
+
+  try {
+    await writeAiReviewerConfig({ root, server });
+    await writeRawEvent(root, 'sess_ai_non_candidate_target', {
+      id: 'evt_ai_non_candidate_target',
+      session_id: 'sess_ai_non_candidate_target',
+      timestamp: new Date().toISOString(),
+      hook: 'PostToolUse',
+      tool: 'Edit',
+      summary: 'Edit completed PostToolUse',
+      paths: [],
+      status: 'success',
+      signals: [],
+      evidence: ['Project convention: keep AI targets candidate-bound.']
+    });
+
+    const result = await reviewSession({ root, sessionId: 'sess_ai_non_candidate_target' });
+
+    assert.deepEqual(result.retrospective.findings, []);
+  } finally {
+    await server.close();
+  }
+});
+
+test('reviewSession AI reviewer accepts absolute candidate targets', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-'));
+  await fs.mkdir(path.join(root, '.bypass'), { recursive: true });
+  const candidateTarget = path.join(root, 'AGENTS.md');
+  const server = await startAiReviewServer(async () => ({
+    retrospective: {
+      outcome: 'completed',
+      quality: 'minor_issues',
+      findings: [{
+        id: 'finding_absolute_candidate_target',
+        category: 'knowledge',
+        severity: 'medium',
+        evidence: ['evt_ai_absolute_candidate_target'],
+        diagnosis: 'AI found a reusable convention.',
+        recommendation: 'Ask whether to save it.',
+        action: {
+          type: 'update_knowledge',
+          confidence: 'high',
+          target: candidateTarget,
+          proposed_text: 'Project convention: accept absolute candidate targets.',
+          rationale: 'Future reviewer changes need strict target validation.'
+        }
+      }]
+    }
+  }));
+
+  try {
+    await writeAiReviewerConfig({ root, server });
+    await writeRawEvent(root, 'sess_ai_absolute_candidate_target', {
+      id: 'evt_ai_absolute_candidate_target',
+      session_id: 'sess_ai_absolute_candidate_target',
+      timestamp: new Date().toISOString(),
+      hook: 'PostToolUse',
+      tool: 'Edit',
+      summary: 'Edit completed PostToolUse',
+      paths: [],
+      status: 'success',
+      signals: [],
+      evidence: ['Project convention: accept absolute candidate targets.']
+    });
+
+    const result = await reviewSession({ root, sessionId: 'sess_ai_absolute_candidate_target' });
+
+    assert.equal(result.retrospective.findings.length, 1);
+    assert.equal(result.retrospective.findings[0].action.target, candidateTarget);
+  } finally {
+    await server.close();
+  }
+});
+
 test('reviewSession ignores project_convention signals without actionable text', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-'));
   await writeRawEvent(root, 'sess_weak_signal', {
@@ -661,6 +807,21 @@ async function appendRawEvent(root, sessionId, line) {
   const sessionDir = path.join(root, '.bypass', 'sessions', sessionId);
   await fs.mkdir(sessionDir, { recursive: true });
   await fs.appendFile(path.join(sessionDir, 'events.jsonl'), `${line}\n`);
+}
+
+async function writeAiReviewerConfig({ root, server }) {
+  await fs.writeFile(path.join(root, '.bypass', 'config.json'), `${JSON.stringify({
+    reviewer: {
+      mode: 'ai',
+      fallback: 'none',
+      provider: {
+        type: 'openai-compatible',
+        baseUrl: server.baseUrl,
+        apiKey: 'test-api-key',
+        model: 'memory-reviewer'
+      }
+    }
+  })}\n`);
 }
 
 async function freePort() {

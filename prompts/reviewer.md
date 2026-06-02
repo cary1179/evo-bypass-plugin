@@ -35,6 +35,8 @@ Required finding fields: `id`, `category`, `severity`, `evidence`, `diagnosis`, 
 
 Required action fields: `type`, `confidence`. Optional action fields: `target`, `target_reason`, `proposed_text`, `rationale`.
 
+For `action.type === "update_knowledge"`, `target` and `proposed_text` are required. For other action types, they are optional.
+
 Use only evidence ids present in the provided events. For `update_knowledge`, use only `target` values from the provided candidates.
 
 Return empty `findings` for smooth sessions.

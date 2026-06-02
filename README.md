@@ -17,6 +17,7 @@ Evo Bypass stores session artifacts under the current workspace:
   events.jsonl           – redacted tool-use events collected during the task
   retrospective.json     – reviewer output: task status, findings, and actions
   retrospective.md       – readable task retrospective report
+  suggestions.json       – derived legacy compatibility view for approved knowledge updates
   approval.json          – user-approved update_knowledge action ids and approval message
   applied.patch          – diff of changes written by the updater
   reviewer.log           – full reviewer run log for debugging
@@ -34,7 +35,7 @@ The collector records summaries, paths, exit status, redacted evidence snippets,
   
 3. `Stop` runs the reviewer and writes `retrospective.json`.
   
-4. If the reviewer finds durable knowledge, it writes a Markdown report under the user-level bypass directory.
+4. It writes a Markdown report under the user-level bypass directory for every Stop review.
   
 5. The reviewer tells the main agent to read that report and ask the user whether to apply specific `update_knowledge` actions.
   
@@ -67,7 +68,7 @@ Each `update_knowledge` action includes evidence ids, confidence, a target knowl
 ## Stop Hook Reports
 ![Codex stop hook decision](./docs/assets/readme/stop-hook-decision.png)
 
-When a completed session has possible knowledge updates, Evo Bypass writes the detailed review report to:
+For every Stop review, Evo Bypass writes the detailed review report to:
 
 ```text
 ~/.bypass/retrospective/<session-id>.md
@@ -80,7 +81,7 @@ For Codex, the Stop hook emits valid JSON. If `update_knowledge` actions exist, 
 No-update sessions return:
 
 ```text
-本次任务无待更新知识。
+本次任务复盘无待处理动作。
 ```
 ## Install For Codex
 From the Evo Bypass repository root, run:
@@ -153,7 +154,7 @@ node scripts/apply-approved-update.js <session-id> <action_1,action_2> "user app
 
 The updater refuses to write unless approval is explicit. It also rejects unknown action ids, duplicate approvals, unsafe target paths, malformed retrospective findings, and missing approval text.
 
-Legacy sessions may still have `suggestions.json`; the apply command supports that fallback for old sessions.
+Old sessions and current compatibility views may use `suggestions.json`; `retrospective.json` is authoritative, and the apply command supports the compatibility fallback.
 
 ![No silent memory mutation](./docs/assets/readme/no-silent-memory-mutation.png)
 ## Configure Knowledge Routing

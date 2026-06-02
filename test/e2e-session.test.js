@@ -40,7 +40,7 @@ test('full bypass flow records, reviews, requires approval, and applies approved
   }));
 
   const apply = await applyApprovedUpdate({ root, sessionId });
-  const knowledge = await fs.readFile(paths.defaultKnowledgePath, 'utf8');
+  const knowledge = await fs.readFile(path.join(root, 'AGENTS.md'), 'utf8');
 
   assert.equal(apply.applied.length, 1);
   assert.match(knowledge, /ask before updating local knowledge/);

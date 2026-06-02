@@ -1,0 +1,17 @@
+{
+  "viewer": {
+    "enabled": true,
+    "openMode": "url"
+  },
+  "reviewer": {
+    "mode": "ai",
+    "fallback": "rules",
+    "timeoutMs": 120000,
+    "provider": {
+      "type": "openai-compatible",
+      "baseUrl": "https://open.bigmodel.cn/api/coding/paas/v4",
+      "apiKeyEnv": "EVO_BYPASS_AI_API_KEY",
+      "model": "glm-5.1"
+    }
+  }
+}

@@ -17,7 +17,7 @@ test('resolveSessionPaths returns stable repository-local artifact paths', () =>
   assert.equal(paths.approvalPath, path.join(paths.sessionDir, 'approval.json'));
   assert.equal(paths.appliedPatchPath, path.join(paths.sessionDir, 'applied.patch'));
   assert.equal(paths.reviewerLogPath, path.join(paths.sessionDir, 'reviewer.log'));
-  assert.equal(paths.defaultKnowledgePath, path.join(root, '.bypass', 'knowledge.md'));
+  assert.equal(paths.defaultKnowledgePath, path.join(root, 'AGENTS.md'));
 });
 
 test('resolveSessionPaths requires a string sessionId', () => {

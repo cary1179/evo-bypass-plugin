@@ -16,6 +16,7 @@
           "kind": { "enum": ["user_preference", "project_convention", "tool_learning", "failure_pattern", "environment_fact", "external_fact"] },
           "confidence": { "enum": ["low", "medium", "high"] },
           "target": { "type": "string" },
+          "target_reason": { "type": "string" },
           "evidence": { "type": "array", "items": { "type": "string" } },
           "proposed_text": { "type": "string" },
           "rationale": { "type": "string" }

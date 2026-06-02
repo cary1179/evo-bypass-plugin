@@ -210,14 +210,14 @@ If approval is missing, stale, or ambiguous, the updater exits without changing 
 
 ## Knowledge Targets
 
-The plugin should support configurable knowledge targets. Examples:
+The plugin should support automatic knowledge routing and configurable override targets. Examples:
 
 - repository-local agent notes
 - a personal Codex or Claude knowledge file
 - skill-specific notes
 - project conventions documents
 
-The first version reads targets from `.bypass/config.json`. If no target is configured, it uses `.bypass/knowledge.md` as the repository-local default. The reviewer may still suggest a more appropriate target in `rationale`, but the machine-readable `target` field must always resolve to either a configured path or `.bypass/knowledge.md`.
+The reviewer first uses path evidence to route suggestions to the nearest relevant `AGENTS.md`. If a matching directory-level file exists, it should be preferred. If no scoped file exists, the reviewer may propose creating one. If no path evidence is available, the repository root `AGENTS.md` is the fallback. `.bypass/config.json` may still provide an explicit repository-local `knowledgeTarget`; unsafe targets are ignored and automatic routing is used instead.
 
 ## Error Handling
 

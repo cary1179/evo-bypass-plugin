@@ -24,7 +24,7 @@ export function normalizeEvent(input) {
 }
 
 export function normalizeSuggestion(input, fallbackTarget) {
-  return {
+  const suggestion = {
     id: input.id || `sug_${randomUUID()}`,
     kind: input.kind,
     confidence: input.confidence,
@@ -33,6 +33,10 @@ export function normalizeSuggestion(input, fallbackTarget) {
     proposed_text: String(input.proposed_text || '').trim(),
     rationale: String(input.rationale || '').trim()
   };
+  if (typeof input.target_reason === 'string' && input.target_reason.trim()) {
+    suggestion.target_reason = input.target_reason.trim();
+  }
+  return suggestion;
 }
 
 function stringOrThrow(value, name) {

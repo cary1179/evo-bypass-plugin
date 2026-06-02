@@ -562,6 +562,48 @@ test('reviewSession AI reviewer drops findings with unknown evidence ids', async
   }
 });
 
+test('reviewSession uses rules fallback when AI retrospective shape is malformed', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-'));
+  await fs.mkdir(path.join(root, '.bypass'), { recursive: true });
+  const server = await startAiReviewServer(async () => ({
+    retrospective: {
+      findings: 'bad'
+    }
+  }));
+
+  try {
+    await fs.writeFile(path.join(root, '.bypass', 'config.json'), `${JSON.stringify({
+      reviewer: {
+        mode: 'ai',
+        fallback: 'rules',
+        provider: {
+          type: 'openai-compatible',
+          baseUrl: server.baseUrl,
+          apiKey: 'test-api-key',
+          model: 'memory-reviewer'
+        }
+      }
+    })}\n`);
+    await collectEvent({
+      root,
+      payload: {
+        hook_event_name: 'PostToolUse',
+        session_id: 'sess_ai_malformed_fallback',
+        tool_name: 'Bash',
+        tool_response: { exit_code: 0, output: 'Project convention: reject malformed AI retrospectives.' }
+      }
+    });
+
+    const result = await reviewSession({ root, sessionId: 'sess_ai_malformed_fallback' });
+
+    assert.equal(result.retrospective.findings.length, 1);
+    assert.equal(result.retrospective.findings[0].action.type, 'update_knowledge');
+    assert.equal(result.retrospective.findings[0].action.proposed_text, 'Project convention: reject malformed AI retrospectives.');
+  } finally {
+    await server.close();
+  }
+});
+
 test('reviewSession ignores project_convention signals without actionable text', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-'));
   await writeRawEvent(root, 'sess_weak_signal', {

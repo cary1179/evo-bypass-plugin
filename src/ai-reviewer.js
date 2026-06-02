@@ -114,12 +114,13 @@ async function fileExists(filePath) {
 }
 
 function validateAiRetrospective({ root, sessionId, events, candidates, parsed }) {
+  if (!Array.isArray(parsed?.retrospective?.findings)) {
+    throw new Error('AI reviewer response must include retrospective.findings array');
+  }
+
   const eventIds = new Set(events.map((event) => event.id));
   const targetByCandidate = new Map(candidates.map((candidate) => [path.resolve(candidate.target), candidate.target]));
-  const findings = Array.isArray(parsed?.retrospective?.findings)
-    ? parsed.retrospective.findings
-    : [];
-  const normalizedFindings = findings
+  const normalizedFindings = parsed.retrospective.findings
     .map((finding) => normalizeAiFinding({ root, eventIds, targetByCandidate, finding }))
     .filter(Boolean);
 

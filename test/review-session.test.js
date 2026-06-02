@@ -214,7 +214,7 @@ test('review-session CLI appends stop hook execution log', async () => {
   assert.match(lines[1].reportPath, /sess_stop_log\.md$/);
 });
 
-test('review-session CLI writes retrospective markdown when there are no suggestions', async () => {
+test('review-session CLI prints valid Codex JSON for clean retrospective', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-'));
   const bypassDir = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-home-'));
   await collectEvent({ root, payload: { hook_event_name: 'UserPromptSubmit', session_id: 'sess_codex_empty', prompt: 'hello' } });
@@ -229,8 +229,37 @@ test('review-session CLI writes retrospective markdown when there are no suggest
   assert.equal(result.status, 0);
   const output = JSON.parse(result.stdout);
   assert.equal(output.continue, true);
-  assert.equal(output.systemMessage, '本次任务无待更新知识。');
-  await fs.stat(path.join(bypassDir, 'retrospective', 'sess_codex_empty.md'));
+  assert.match(output.systemMessage, /本次任务复盘无待处理动作/);
+  assert.match(await fs.readFile(path.join(bypassDir, 'retrospective', 'sess_codex_empty.md'), 'utf8'), /Task Retrospective|Session Retrospective/);
+});
+
+test('review-session CLI links retrospective without forcing confirmation for non-knowledge findings', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-'));
+  const bypassDir = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-home-'));
+  await collectEvent({ root, payload: { hook_event_name: 'UserPromptSubmit', session_id: 'sess_codex_failure', prompt: 'fix tests' } });
+  await collectEvent({
+    root,
+    payload: {
+      hook_event_name: 'PostToolUse',
+      session_id: 'sess_codex_failure',
+      tool_name: 'Bash',
+      tool_input: { command: 'npm test' },
+      tool_response: { exit_code: 1, output: 'not ok 1 test failed' }
+    }
+  });
+
+  const result = spawnSync(process.execPath, [reviewCliPath, '--runtime', 'codex'], {
+    cwd: root,
+    input: JSON.stringify({ session_id: 'sess_codex_failure', cwd: root }),
+    env: { ...process.env, EVO_BYPASS_DIR: bypassDir },
+    encoding: 'utf8'
+  });
+
+  assert.equal(result.status, 0);
+  const output = JSON.parse(result.stdout);
+  assert.equal(output.continue, true);
+  assert.match(output.systemMessage, /任务复盘报告/);
+  assert.doesNotMatch(output.systemMessage, /是否应用/);
 });
 
 test('review-session CLI includes viewer URL when configured and suggestions exist', async () => {

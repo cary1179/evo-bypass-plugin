@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { readBypassConfig } from '../src/core/config.js';
+import { readBypassConfig, shouldExposeViewer } from '../src/core/config.js';
 
 test('readBypassConfig returns safe defaults when config is missing', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-config-'));
@@ -130,4 +130,12 @@ test('readBypassConfig rejects unsafe or invalid config values', async () => {
     timeoutMs: 120000,
     provider: undefined
   });
+});
+
+test('shouldExposeViewer supports action count while preserving suggestion count compatibility', () => {
+  assert.equal(shouldExposeViewer({
+    viewer: { enabled: true, openMode: 'url', openOnlyWhenSuggestions: true },
+    suggestionCount: 0,
+    actionCount: 1
+  }), true);
 });

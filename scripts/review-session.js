@@ -36,19 +36,21 @@ const runtime = hookRuntime(payload);
 await appendStopHookLog({ root, runtime, sessionId, event: 'stop_hook_start' });
 try {
   const result = await reviewSession({ root, sessionId });
-  const viewerResult = await maybeStartViewer({ root, sessionId, suggestionCount: result.suggestions.length });
+  const knowledgeUpdates = knowledgeActionCount(result);
+  const findings = findingCount(result);
+  const viewerResult = await maybeStartViewer({ root, sessionId, actionCount: findings, suggestionCount: knowledgeUpdates });
   await appendStopHookLog({
     root,
     runtime,
     sessionId,
     event: 'stop_hook_finish',
-    suggestionCount: result.suggestions.length,
-    reportPath: result.suggestion_report_path || ''
+    suggestionCount: knowledgeUpdates,
+    reportPath: result.retrospective_report_path || ''
   });
   const report = formatReport(result, viewerResult);
   if (isCodexRuntime(payload)) {
     console.log(JSON.stringify({
-      continue: result.suggestions.length === 0,
+      continue: knowledgeUpdates === 0,
       suppressOutput: false,
       systemMessage: report
     }, null, 2));
@@ -118,9 +120,19 @@ async function appendStopHookLog({ root, ...entry }) {
   }
 }
 
-async function maybeStartViewer({ root, sessionId, suggestionCount }) {
+function knowledgeActionCount(result) {
+  return (result.retrospective?.findings || [])
+    .filter((finding) => finding.action?.type === 'update_knowledge')
+    .length;
+}
+
+function findingCount(result) {
+  return result.retrospective?.findings?.length || 0;
+}
+
+async function maybeStartViewer({ root, sessionId, suggestionCount, actionCount }) {
   const config = await readBypassConfig({ root });
-  if (!shouldExposeViewer({ viewer: config.viewer, suggestionCount })) {
+  if (!shouldExposeViewer({ viewer: config.viewer, suggestionCount, actionCount })) {
     return undefined;
   }
 
@@ -169,12 +181,21 @@ function startViewerProcess({ root, sessionId, viewer }) {
 }
 
 function formatReport(result, viewerResult) {
-  if (result.suggestions.length === 0) {
-    return withViewerReport('本次任务无待更新知识。', viewerResult);
+  const reportPath = result.retrospective_report_path || '';
+  const knowledgeUpdates = knowledgeActionCount(result);
+  const findings = findingCount(result);
+  if (findings === 0) {
+    return withViewerReport('本次任务复盘无待处理动作。', viewerResult);
+  }
+  if (knowledgeUpdates > 0) {
+    return withViewerReport(
+      `请告知用户：本次任务复盘总结了需要确认的知识更新。请阅读 ${reportPath} 文件，并询问用户是否应用其中的知识更新建议。`,
+      viewerResult
+    );
   }
 
   return withViewerReport(
-    `请告知用户：本次任务总结了可更新知识或记忆。请阅读 ${result.suggestion_report_path} 文件，了解根据本次任务总结的知识或记忆，并询问用户是否应用这些建议。`,
+    `请告知用户：本次任务生成了任务复盘报告，可阅读 ${reportPath} 了解失败、问题和后续改进建议。`,
     viewerResult
   );
 }

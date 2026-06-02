@@ -96,6 +96,53 @@ test('applyApprovedUpdate writes approved update_knowledge findings from retrosp
   assert.match(knowledge, /apply retrospective actions/);
 });
 
+test('applyApprovedUpdate prefers retrospective findings over legacy suggestions', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-'));
+  const paths = resolveSessionPaths({ root, sessionId: 'sess_apply_precedence' });
+  await fs.mkdir(paths.sessionDir, { recursive: true });
+  await fs.writeFile(paths.retrospectivePath, JSON.stringify({
+    session_id: 'sess_apply_precedence',
+    summary: 'Found one action.',
+    retrospective: {
+      outcome: 'completed',
+      quality: 'minor_issues',
+      findings: [{
+        id: 'finding_knowledge',
+        category: 'knowledge',
+        severity: 'medium',
+        evidence: ['evt_1'],
+        diagnosis: 'Reusable convention.',
+        recommendation: 'Save it.',
+        action: {
+          type: 'update_knowledge',
+          confidence: 'high',
+          target: paths.defaultKnowledgePath,
+          proposed_text: 'Project convention: use retrospective first.',
+          rationale: 'Retrospective is authoritative.'
+        }
+      }]
+    }
+  }));
+  await fs.writeFile(paths.suggestionsPath, JSON.stringify({
+    session_id: 'sess_apply_precedence',
+    suggestions: [
+      { id: 'sug_legacy', target: paths.defaultKnowledgePath, proposed_text: 'Do not apply legacy.' }
+    ]
+  }));
+  await fs.writeFile(paths.approvalPath, JSON.stringify({
+    approved_at: new Date().toISOString(),
+    approved_suggestion_ids: ['finding_knowledge'],
+    approval_text: 'yes, apply finding_knowledge'
+  }));
+
+  const result = await applyApprovedUpdate({ root, sessionId: 'sess_apply_precedence' });
+  const knowledge = await fs.readFile(paths.defaultKnowledgePath, 'utf8');
+
+  assert.equal(result.applied.length, 1);
+  assert.match(knowledge, /Project convention: use retrospective first/);
+  assert.equal(knowledge.includes('Do not apply legacy'), false);
+});
+
 test('applyApprovedUpdate rejects approval ids that are not an array', async () => {
   const { root } = await writeApprovedUpdateFixture({
     sessionId: 'sess_apply_string_ids',

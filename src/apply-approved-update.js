@@ -56,9 +56,6 @@ async function readApprovedActionCandidates(paths) {
   try {
     const retrospective = await readJson(paths.retrospectivePath, 'retrospective.json is required');
     const actions = extractKnowledgeActions(retrospective).map(findingToSuggestion);
-    if (!Array.isArray(actions)) {
-      throw new Error('retrospective.json must include retrospective findings');
-    }
     return actions;
   } catch (error) {
     if (error.message !== 'retrospective.json is required') {

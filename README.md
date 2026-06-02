@@ -1,7 +1,7 @@
 # Evo Bypass
 ![Evo Bypass hero banner](./docs/assets/readme/evo-bypass-hero.png)
 
-![npm version](https://img.shields.io/npm/v/evo-bypass.svg)![license](https://img.shields.io/github/license/anthropics/evo-bypass.svg)![test status](https://img.shields.io/github/actions/workflow/status/anthropics/evo-bypass/test.yml?branch=main&label=tests)
+![license](https://img.shields.io/badge/license-MIT-blue.svg) ![tests](https://img.shields.io/badge/tests-node%20--test-2ea44f)
 
 Evo Bypass is an advisory-first knowledge update helper for Claude Code and Codex.
 

@@ -40,7 +40,7 @@
           {
             "type": "command",
             "command": "node \"$EVO_BYPASS_HOME/scripts/review-session.js\" --runtime codex",
-            "timeout": 5
+            "timeout": 120
           }
         ]
       }

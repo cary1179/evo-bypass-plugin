@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
+import http from 'node:http';
 import net from 'node:net';
 import fs from 'node:fs/promises';
 import os from 'node:os';
@@ -31,7 +32,8 @@ test('reviewSession suggests durable knowledge from convention evidence', async 
   assert.equal(result.session_id, 'sess_review');
   assert.equal(result.suggestions.length, 1);
   assert.equal(result.suggestions[0].kind, 'project_convention');
-  assert.equal(result.suggestions[0].target.endsWith('.bypass/knowledge.md'), true);
+  assert.equal(result.suggestions[0].target, path.join(root, 'AGENTS.md'));
+  assert.match(result.suggestions[0].target_reason, /root AGENTS\.md/);
   assert.equal(result.suggestion_report_path, path.join(bypassDir, 'suggestion', 'sess_review.md'));
   const report = await fs.readFile(result.suggestion_report_path, 'utf8');
   assert.match(report, /Project convention: use node:test and avoid runtime dependencies\./);
@@ -75,6 +77,36 @@ test('review-session CLI prints a report for an existing session', async () => {
   assert.match(report, /Project convention: keep report details in markdown\./);
 });
 
+test('review-session CLI resolves Claude session id from stdin payload without env var', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-'));
+  const bypassDir = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-home-'));
+  await collectEvent({ root, payload: { hook_event_name: 'UserPromptSubmit', session_id: 'sess_claude_stdin', prompt: 'hello' } });
+  await collectEvent({
+    root,
+    payload: {
+      hook_event_name: 'PostToolUse',
+      session_id: 'sess_claude_stdin',
+      tool_name: 'Bash',
+      tool_response: { exit_code: 0, output: 'Project convention: resolve Claude stop session from stdin.' }
+    }
+  });
+
+  const env = { ...process.env, EVO_BYPASS_DIR: bypassDir };
+  delete env.CLAUDE_SESSION_ID;
+  const result = spawnSync(process.execPath, [reviewCliPath], {
+    cwd: root,
+    input: JSON.stringify({ session_id: 'sess_claude_stdin', cwd: root, hook_event_name: 'Stop' }),
+    env,
+    encoding: 'utf8'
+  });
+
+  assert.equal(result.status, 0);
+  const reportPath = path.join(bypassDir, 'suggestion', 'sess_claude_stdin.md');
+  assert.match(result.stdout, new RegExp(`请阅读 ${escapeRegExp(reportPath)} 文件`));
+  const report = await fs.readFile(reportPath, 'utf8');
+  assert.match(report, /Project convention: resolve Claude stop session from stdin\./);
+});
+
 test('review-session CLI prints valid Codex stop hook JSON output', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-'));
   const bypassDir = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-home-'));
@@ -107,6 +139,45 @@ test('review-session CLI prints valid Codex stop hook JSON output', async () => 
   assert.doesNotMatch(output.systemMessage, /Project convention: keep hook reports readable\./);
   const report = await fs.readFile(reportPath, 'utf8');
   assert.match(report, /Project convention: keep hook reports readable\./);
+});
+
+test('review-session CLI appends stop hook execution log', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-'));
+  const bypassDir = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-home-'));
+  await collectEvent({ root, payload: { hook_event_name: 'UserPromptSubmit', session_id: 'sess_stop_log', prompt: 'hello' } });
+  await collectEvent({
+    root,
+    payload: {
+      hook_event_name: 'PostToolUse',
+      session_id: 'sess_stop_log',
+      tool_name: 'Bash',
+      tool_response: { exit_code: 0, output: 'Project convention: log stop hook execution.' }
+    }
+  });
+
+  const result = spawnSync(process.execPath, [reviewCliPath, '--runtime', 'codex'], {
+    cwd: root,
+    input: JSON.stringify({ session_id: 'sess_stop_log', cwd: root }),
+    env: { ...process.env, EVO_BYPASS_DIR: bypassDir },
+    encoding: 'utf8'
+  });
+
+  assert.equal(result.status, 0);
+  const lines = (await fs.readFile(path.join(root, '.bypass', 'stop-hook.log'), 'utf8'))
+    .trim()
+    .split('\n')
+    .map((line) => JSON.parse(line));
+  assert.equal(lines.length, 2);
+  assert.equal(lines[0].event, 'stop_hook_start');
+  assert.equal(lines[0].runtime, 'codex');
+  assert.equal(lines[0].cwd, root);
+  assert.equal(lines[0].sessionId, 'sess_stop_log');
+  assert.equal(lines[1].event, 'stop_hook_finish');
+  assert.equal(lines[1].runtime, 'codex');
+  assert.equal(lines[1].cwd, root);
+  assert.equal(lines[1].sessionId, 'sess_stop_log');
+  assert.equal(lines[1].suggestionCount, 1);
+  assert.match(lines[1].reportPath, /sess_stop_log\.md$/);
 });
 
 test('review-session CLI does not write markdown when there are no suggestions', async () => {
@@ -268,7 +339,7 @@ test('reviewSession falls back when configured knowledge target escapes root', a
 
   const result = await reviewSession({ root, sessionId: 'sess_bad_target' });
 
-  assert.equal(result.suggestions[0].target, path.join(root, '.bypass', 'knowledge.md'));
+  assert.equal(result.suggestions[0].target, path.join(root, 'AGENTS.md'));
 });
 
 test('reviewSession falls back when reviewer config is malformed JSON', async () => {
@@ -288,7 +359,156 @@ test('reviewSession falls back when reviewer config is malformed JSON', async ()
   const result = await reviewSession({ root, sessionId: 'sess_bad_config_json' });
 
   assert.equal(result.suggestions.length, 1);
-  assert.equal(result.suggestions[0].target.endsWith('.bypass/knowledge.md'), true);
+  assert.equal(result.suggestions[0].target, path.join(root, 'AGENTS.md'));
+});
+
+test('reviewSession routes path scoped knowledge to nearest directory AGENTS file', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-'));
+  await fs.mkdir(path.join(root, 'src', 'viewer'), { recursive: true });
+  await fs.writeFile(path.join(root, 'src', 'AGENTS.md'), '# src guidance\n');
+  await fs.writeFile(path.join(root, 'src', 'viewer', 'AGENTS.md'), '# viewer guidance\n');
+  await collectEvent({
+    root,
+    payload: {
+      hook_event_name: 'PostToolUse',
+      session_id: 'sess_path_route',
+      tool_name: 'Edit',
+      tool_input: { file_path: 'src/viewer/server.js' },
+      tool_response: { exit_code: 0, output: 'Project convention: keep viewer routes read-only.' }
+    }
+  });
+
+  const result = await reviewSession({ root, sessionId: 'sess_path_route' });
+
+  assert.equal(result.suggestions.length, 1);
+  assert.equal(result.suggestions[0].target, path.join(root, 'src', 'viewer', 'AGENTS.md'));
+  assert.match(result.suggestions[0].target_reason, /nearest existing AGENTS\.md/);
+});
+
+test('reviewSession proposes a missing scoped AGENTS file for path specific knowledge', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-'));
+  await collectEvent({
+    root,
+    payload: {
+      hook_event_name: 'PostToolUse',
+      session_id: 'sess_missing_route',
+      tool_name: 'Edit',
+      tool_input: { file_path: 'packages/api/server.js' },
+      tool_response: { exit_code: 0, output: 'Project convention: prefer contract tests for API changes.' }
+    }
+  });
+
+  const result = await reviewSession({ root, sessionId: 'sess_missing_route' });
+
+  assert.equal(result.suggestions.length, 1);
+  assert.equal(result.suggestions[0].target, path.join(root, 'packages', 'api', 'AGENTS.md'));
+  assert.match(result.suggestions[0].target_reason, /missing scoped AGENTS\.md/);
+});
+
+test('reviewSession uses configured AI provider to generate suggestions from session events', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-'));
+  await fs.mkdir(path.join(root, '.bypass'), { recursive: true });
+  const requests = [];
+  const server = await startAiReviewServer(async ({ body }) => {
+    requests.push(body);
+    const userPayload = JSON.parse(body.messages[1].content);
+    assert.equal(body.model, 'memory-reviewer');
+    assert.match(body.messages[0].content, /Evo Bypass Reviewer/);
+    assert.equal(userPayload.events[0].id, 'evt_ai');
+    assert.equal(userPayload.candidates[0].target, path.join(root, 'packages', 'api', 'AGENTS.md'));
+    return {
+      suggestions: [
+        {
+          id: 'sug_ai',
+          kind: 'project_convention',
+          confidence: 'high',
+          target: userPayload.candidates[0].target,
+          target_reason: 'AI selected the scoped API AGENTS.md from path evidence.',
+          evidence: ['evt_ai'],
+          proposed_text: 'Project convention: prefer contract tests for API changes.',
+          rationale: 'The event describes a durable API testing convention.'
+        }
+      ]
+    };
+  });
+
+  try {
+    await fs.writeFile(path.join(root, '.bypass', 'config.json'), `${JSON.stringify({
+      reviewer: {
+        mode: 'ai',
+        fallback: 'none',
+        provider: {
+          type: 'openai-compatible',
+          baseUrl: server.baseUrl,
+          apiKey: 'test-api-key',
+          model: 'memory-reviewer'
+        }
+      }
+    })}\n`);
+    await writeRawEvent(root, 'sess_ai_review', {
+      id: 'evt_ai',
+      session_id: 'sess_ai_review',
+      timestamp: new Date().toISOString(),
+      hook: 'PostToolUse',
+      tool: 'Edit',
+      summary: 'Edit completed PostToolUse',
+      paths: ['packages/api/server.js'],
+      status: 'success',
+      signals: [],
+      evidence: ['The API package should prefer contract tests for endpoint behavior.']
+    });
+
+    const result = await reviewSession({ root, sessionId: 'sess_ai_review' });
+
+    assert.equal(requests.length, 1);
+    assert.equal(requests[0].messages[1].role, 'user');
+    assert.equal(requests[0].temperature, 0);
+    assert.equal(requests[0].response_format.type, 'json_object');
+    assert.equal(requests[0].headers.authorization, 'Bearer test-api-key');
+    assert.equal(result.suggestions.length, 1);
+    assert.equal(result.suggestions[0].id, 'sug_ai');
+    assert.equal(result.suggestions[0].target, path.join(root, 'packages', 'api', 'AGENTS.md'));
+    assert.equal(result.suggestions[0].proposed_text, 'Project convention: prefer contract tests for API changes.');
+  } finally {
+    await server.close();
+  }
+});
+
+test('reviewSession falls back to rules when AI provider returns invalid JSON', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-'));
+  await fs.mkdir(path.join(root, '.bypass'), { recursive: true });
+  const server = await startAiReviewServer(async () => 'not json');
+
+  try {
+    await fs.writeFile(path.join(root, '.bypass', 'config.json'), `${JSON.stringify({
+      reviewer: {
+        mode: 'ai',
+        fallback: 'rules',
+        provider: {
+          type: 'openai-compatible',
+          baseUrl: server.baseUrl,
+          apiKey: 'test-api-key',
+          model: 'memory-reviewer'
+        }
+      }
+    })}\n`);
+    await collectEvent({
+      root,
+      payload: {
+        hook_event_name: 'PostToolUse',
+        session_id: 'sess_ai_fallback',
+        tool_name: 'Bash',
+        tool_response: { exit_code: 0, output: 'Project convention: keep AI review fallback deterministic.' }
+      }
+    });
+
+    const result = await reviewSession({ root, sessionId: 'sess_ai_fallback' });
+
+    assert.equal(result.suggestions.length, 1);
+    assert.equal(result.suggestions[0].proposed_text, 'Project convention: keep AI review fallback deterministic.');
+  } finally {
+    await server.close();
+  }
 });
 
 test('reviewSession ignores project_convention signals without actionable text', async () => {
@@ -361,6 +581,41 @@ async function freePort() {
     server.close((error) => error ? reject(error) : resolve());
   });
   return port;
+}
+
+async function startAiReviewServer(handler) {
+  const server = http.createServer(async (request, response) => {
+    const chunks = [];
+    for await (const chunk of request) {
+      chunks.push(chunk);
+    }
+    const body = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+    body.headers = {
+      authorization: request.headers.authorization
+    };
+    const content = await handler({ request, body });
+    response.writeHead(200, { 'content-type': 'application/json' });
+    response.end(JSON.stringify({
+      choices: [
+        {
+          message: {
+            content: typeof content === 'string' ? content : JSON.stringify(content)
+          }
+        }
+      ]
+    }));
+  });
+  await new Promise((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', resolve);
+  });
+  const { port } = server.address();
+  return {
+    baseUrl: `http://127.0.0.1:${port}/v1`,
+    close: () => new Promise((resolve, reject) => {
+      server.close((error) => error ? reject(error) : resolve());
+    })
+  };
 }
 
 function escapeRegExp(value) {

@@ -15,7 +15,7 @@ export function resolveSessionPaths({ root = process.cwd(), sessionId }) {
     root,
     bypassDir,
     configPath: path.join(bypassDir, 'config.json'),
-    defaultKnowledgePath: path.join(bypassDir, 'knowledge.md'),
+    defaultKnowledgePath: path.join(root, 'AGENTS.md'),
     sessionDir,
     metadataPath: path.join(sessionDir, 'metadata.json'),
     eventsPath: path.join(sessionDir, 'events.jsonl'),

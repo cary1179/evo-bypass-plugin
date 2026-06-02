@@ -70,6 +70,84 @@ test('mergeHookConfig preserves existing hooks and appends incoming commands onc
   ]);
 });
 
+test('mergeHookConfig refreshes existing Evo Bypass hook options when command matches', () => {
+  const existing = {
+    hooks: {
+      Stop: [
+        {
+          hooks: [
+            {
+              type: 'command',
+              command: 'node "/repo/scripts/review-session.js" --runtime codex',
+              timeout: 5,
+            },
+          ],
+        },
+      ],
+    },
+  };
+  const incoming = {
+    hooks: {
+      Stop: [
+        {
+          hooks: [
+            {
+              type: 'command',
+              command: 'node "/repo/scripts/review-session.js" --runtime codex',
+              timeout: 120,
+            },
+          ],
+        },
+      ],
+    },
+  };
+
+  const merged = mergeHookConfig(existing, incoming);
+
+  assert.equal(merged.hooks.Stop[0].hooks.length, 1);
+  assert.equal(merged.hooks.Stop[0].hooks[0].timeout, 120);
+  assert.equal(existing.hooks.Stop[0].hooks[0].timeout, 5);
+});
+
+test('mergeHookConfig migrates old Claude review hook that used CLAUDE_SESSION_ID', () => {
+  const existing = {
+    hooks: {
+      Stop: [
+        {
+          hooks: [
+            {
+              type: 'command',
+              command: 'node "/repo/scripts/review-session.js" "$CLAUDE_SESSION_ID"',
+              asyncRewake: true,
+            },
+          ],
+        },
+      ],
+    },
+  };
+  const incoming = {
+    hooks: {
+      Stop: [
+        {
+          hooks: [
+            {
+              type: 'command',
+              command: 'node "/repo/scripts/review-session.js"',
+              asyncRewake: true,
+            },
+          ],
+        },
+      ],
+    },
+  };
+
+  const merged = mergeHookConfig(existing, incoming);
+
+  assert.equal(merged.hooks.Stop[0].hooks.length, 1);
+  assert.equal(merged.hooks.Stop[0].hooks[0].command, 'node "/repo/scripts/review-session.js"');
+  assert.equal(merged.hooks.Stop[0].hooks[0].asyncRewake, true);
+});
+
 test('installHooks uses Codex env target, replaces repo placeholder, and is idempotent', async () => {
   const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-codex-hooks-'));
   const targetPath = path.join(tmpDir, 'nested', 'hooks.json');

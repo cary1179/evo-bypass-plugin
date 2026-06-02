@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import fs from 'node:fs/promises';
 import path from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
@@ -31,17 +32,38 @@ if (!sessionId) {
 }
 
 const root = payload.cwd || payload.working_directory || payload.workspace || process.cwd();
-const result = await reviewSession({ root, sessionId });
-const viewerResult = await maybeStartViewer({ root, sessionId, suggestionCount: result.suggestions.length });
-const report = formatReport(result, viewerResult);
-if (isCodexRuntime(payload)) {
-  console.log(JSON.stringify({
-    continue: result.suggestions.length === 0,
-    suppressOutput: false,
-    systemMessage: report
-  }, null, 2));
-} else {
-  console.log(report);
+const runtime = hookRuntime(payload);
+await appendStopHookLog({ root, runtime, sessionId, event: 'stop_hook_start' });
+try {
+  const result = await reviewSession({ root, sessionId });
+  const viewerResult = await maybeStartViewer({ root, sessionId, suggestionCount: result.suggestions.length });
+  await appendStopHookLog({
+    root,
+    runtime,
+    sessionId,
+    event: 'stop_hook_finish',
+    suggestionCount: result.suggestions.length,
+    reportPath: result.suggestion_report_path || ''
+  });
+  const report = formatReport(result, viewerResult);
+  if (isCodexRuntime(payload)) {
+    console.log(JSON.stringify({
+      continue: result.suggestions.length === 0,
+      suppressOutput: false,
+      systemMessage: report
+    }, null, 2));
+  } else {
+    console.log(report);
+  }
+} catch (error) {
+  await appendStopHookLog({
+    root,
+    runtime,
+    sessionId,
+    event: 'stop_hook_error',
+    error: error.message || String(error)
+  });
+  throw error;
 }
 
 async function readStdin() {
@@ -71,11 +93,29 @@ function firstNonFlagArg() {
 }
 
 function isCodexRuntime(payload) {
+  return hookRuntime(payload) === 'codex';
+}
+
+function hookRuntime(payload) {
   const runtimeArgIndex = process.argv.indexOf('--runtime');
-  if (runtimeArgIndex >= 0 && process.argv[runtimeArgIndex + 1] === 'codex') {
-    return true;
+  if (runtimeArgIndex >= 0 && process.argv[runtimeArgIndex + 1]) {
+    return process.argv[runtimeArgIndex + 1];
   }
-  return payload.runtime === 'codex';
+  return payload.runtime || 'claude';
+}
+
+async function appendStopHookLog({ root, ...entry }) {
+  try {
+    const logPath = path.join(root, '.bypass', 'stop-hook.log');
+    await fs.mkdir(path.dirname(logPath), { recursive: true });
+    await fs.appendFile(logPath, `${JSON.stringify({
+      timestamp: new Date().toISOString(),
+      cwd: root,
+      ...entry
+    })}\n`);
+  } catch {
+    // Stop hook observability should never make the hook itself fail.
+  }
 }
 
 async function maybeStartViewer({ root, sessionId, suggestionCount }) {

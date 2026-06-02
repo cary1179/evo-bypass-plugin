@@ -13,7 +13,7 @@
 ## File Structure
 
 - Create `package.json`: project metadata, ESM mode, test scripts.
-- Create `.gitignore`: ignore `.bypass/sessions/`, logs, and dependency folders while allowing `.bypass/knowledge.md` if created.
+- Create `.gitignore`: ignore `.bypass/sessions/`, logs, and dependency folders.
 - Create `src/core/redact.js`: redacts secrets from evidence before persistence.
 - Create `src/core/session-paths.js`: resolves repo root, config, session directory, metadata, events, suggestions, approval, and patch paths.
 - Create `src/core/event-schema.js`: validates and normalizes event and suggestion objects without external dependencies.
@@ -64,7 +64,7 @@ test('resolveSessionPaths returns stable repository-local artifact paths', () =>
   assert.equal(paths.suggestionsPath, path.join(paths.sessionDir, 'suggestions.json'));
   assert.equal(paths.approvalPath, path.join(paths.sessionDir, 'approval.json'));
   assert.equal(paths.appliedPatchPath, path.join(paths.sessionDir, 'applied.patch'));
-  assert.equal(paths.defaultKnowledgePath, path.join(root, '.bypass', 'knowledge.md'));
+  assert.equal(paths.defaultKnowledgePath, path.join(root, 'AGENTS.md'));
 });
 ```
 
@@ -115,7 +115,7 @@ export function resolveSessionPaths({ root = process.cwd(), sessionId }) {
     root,
     bypassDir,
     configPath: path.join(bypassDir, 'config.json'),
-    defaultKnowledgePath: path.join(bypassDir, 'knowledge.md'),
+    defaultKnowledgePath: path.join(root, 'AGENTS.md'),
     sessionDir,
     metadataPath: path.join(sessionDir, 'metadata.json'),
     eventsPath: path.join(sessionDir, 'events.jsonl'),
@@ -574,7 +574,7 @@ test('reviewSession suggests durable knowledge from convention evidence', async 
   assert.equal(result.session_id, 'sess_review');
   assert.equal(result.suggestions.length, 1);
   assert.equal(result.suggestions[0].kind, 'project_convention');
-  assert.equal(result.suggestions[0].target.endsWith('.bypass/knowledge.md'), true);
+  assert.equal(result.suggestions[0].target.endsWith('AGENTS.md'), true);
 });
 
 test('reviewSession emits no suggestions without durable signals', async () => {
@@ -1171,7 +1171,7 @@ It never updates the knowledge base from the review hook. The main agent must as
 node scripts/apply-approved-update.js <session-id> <sug_1,sug_2> "user approved these updates"
 ```
 
-By default, approved updates append to `.bypass/knowledge.md`.
+By default, approved updates are routed to `AGENTS.md`.
 
 ## Codex Installation
 
@@ -1293,4 +1293,4 @@ git commit -m "test: verify end-to-end bypass flow"
 
 - Spec coverage: hook lifecycle for Claude and Codex is covered by Tasks 3, 4, and 6; session storage by Tasks 1, 3, 4, and 5; event and suggestion schemas by Tasks 2, 4, and 6; approval-gated update flow by Task 5; privacy redaction by Task 2; testing by Tasks 1 through 7.
 - Placeholder scan: the plan contains no unresolved placeholder steps. Every code-producing step includes concrete content.
-- Type consistency: the plan consistently uses `sessionId` in library inputs, `session_id` in persisted JSON, `suggestions.json`, `approval.json`, and `.bypass/knowledge.md` as the default target.
+- Type consistency: the plan consistently uses `sessionId` in library inputs, `session_id` in persisted JSON, `suggestions.json`, `approval.json`, and `AGENTS.md` as the default target.

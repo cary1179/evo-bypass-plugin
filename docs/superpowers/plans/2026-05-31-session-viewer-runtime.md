@@ -58,7 +58,7 @@ Rules:
 - invalid JSON sets `configError` and uses defaults
 - `viewer.openMode` accepts only `off`, `url`, `browser`
 - `viewer.port` accepts integer `1..65535`
-- `knowledgeTarget` must stay inside root, otherwise use `.bypass/knowledge.md`
+- `knowledgeTarget` must stay inside root, otherwise automatic `AGENTS.md` routing is used
 
 - [ ] **Step 3: Verify config tests pass**
 

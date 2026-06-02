@@ -3,12 +3,17 @@ import os from 'node:os';
 import path from 'node:path';
 import { resolveSessionPaths } from './core/session-paths.js';
 import { normalizeSuggestion } from './core/event-schema.js';
+import { readBypassConfig } from './core/config.js';
+import { routeKnowledgeTarget } from './knowledge-routing.js';
+import { reviewWithAiProvider } from './ai-reviewer.js';
 
 export async function reviewSession({ root = process.cwd(), sessionId, bypassDir = defaultBypassDir() }) {
   const paths = resolveSessionPaths({ root, sessionId });
   const { events, malformedCount } = await readEvents(paths.eventsPath);
-  const target = await resolveKnowledgeTarget(paths);
-  const suggestions = dedupeSuggestions(events.flatMap((event) => suggestionForEvent(event, target))).slice(0, 10);
+  const config = await readBypassConfig({ root: paths.root });
+  const candidates = await buildCandidates({ root: paths.root, events, configuredTarget: config.knowledgeTarget });
+  const suggested = await reviewSuggestions({ root: paths.root, sessionId, events, candidates, reviewer: config.reviewer });
+  const suggestions = dedupeSuggestions(suggested).slice(0, 10);
   const result = {
     session_id: sessionId,
     summary: suggestions.length > 0
@@ -25,6 +30,52 @@ export async function reviewSession({ root = process.cwd(), sessionId, bypassDir
   await fs.writeFile(paths.suggestionsPath, `${JSON.stringify(result, null, 2)}\n`);
   await fs.writeFile(paths.reviewerLogPath, reviewerLog({ result, malformedCount }));
   return result;
+}
+
+async function buildCandidates({ root, events, configuredTarget }) {
+  const candidates = [];
+  for (const event of events) {
+    const route = await routeKnowledgeTarget({ root, event, configuredTarget });
+    candidates.push({
+      event_id: event.id,
+      target: route.target,
+      target_reason: route.target_reason
+    });
+  }
+  return candidates;
+}
+
+async function reviewSuggestions({ root, sessionId, events, candidates, reviewer }) {
+  if (shouldUseAiReviewer(reviewer)) {
+    try {
+      return await reviewWithAiProvider({ root, sessionId, events, candidates, reviewer });
+    } catch (error) {
+      if (reviewer.fallback !== 'rules') {
+        return [];
+      }
+    }
+  }
+
+  if (reviewer.mode === 'ai' && reviewer.fallback !== 'rules') {
+    return [];
+  }
+  return reviewWithRules({ events, candidates });
+}
+
+function shouldUseAiReviewer(reviewer) {
+  if (!reviewer?.provider) {
+    return false;
+  }
+  return reviewer.mode === 'ai' || reviewer.mode === 'auto';
+}
+
+function reviewWithRules({ events, candidates }) {
+  const suggestions = [];
+  const routeByEventId = new Map(candidates.map((candidate) => [candidate.event_id, candidate]));
+  for (const event of events) {
+    suggestions.push(...suggestionForEvent(event, routeByEventId.get(event.id)));
+  }
+  return suggestions;
 }
 
 function defaultBypassDir() {
@@ -91,19 +142,7 @@ async function readEvents(eventsPath) {
   }
 }
 
-async function resolveKnowledgeTarget(paths) {
-  try {
-    const config = JSON.parse(await fs.readFile(paths.configPath, 'utf8'));
-    return safeKnowledgeTarget({ root: paths.root, configuredTarget: config.knowledgeTarget, defaultTarget: paths.defaultKnowledgePath });
-  } catch (error) {
-    if (error.code === 'ENOENT' || error instanceof SyntaxError) {
-      return paths.defaultKnowledgePath;
-    }
-    throw error;
-  }
-}
-
-function suggestionForEvent(event, target) {
+function suggestionForEvent(event, route) {
   const evidence = Array.isArray(event.evidence) ? event.evidence : [];
   const signals = Array.isArray(event.signals) ? event.signals : [];
   const text = `${event.summary}\n${evidence.join('\n')}`;
@@ -112,37 +151,25 @@ function suggestionForEvent(event, target) {
     return [normalizeSuggestion({
       kind: 'project_convention',
       confidence: 'medium',
-      target,
+      target: route.target,
+      target_reason: route.target_reason,
       evidence: [event.id],
       proposed_text: knowledgeText,
       rationale: 'The session included explicit convention evidence that may affect future work in this repository.'
-    }, target)];
+    }, route.target)];
   }
   if (signals.includes('test_failure')) {
     return [normalizeSuggestion({
       kind: 'failure_pattern',
       confidence: 'low',
-      target,
+      target: route.target,
+      target_reason: route.target_reason,
       evidence: [event.id],
       proposed_text: `Observed test failure pattern: ${event.summary}`,
       rationale: 'The failed command may be useful if the same failure recurs, but it needs user confirmation before saving.'
-    }, target)];
+    }, route.target)];
   }
   return [];
-}
-
-function safeKnowledgeTarget({ root, configuredTarget, defaultTarget }) {
-  if (typeof configuredTarget !== 'string' || configuredTarget.trim() === '') {
-    return defaultTarget;
-  }
-
-  const resolvedRoot = path.resolve(root);
-  const resolvedTarget = path.resolve(resolvedRoot, configuredTarget);
-  const relative = path.relative(resolvedRoot, resolvedTarget);
-  if (relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative))) {
-    return resolvedTarget;
-  }
-  return defaultTarget;
 }
 
 function dedupeSuggestions(suggestions) {

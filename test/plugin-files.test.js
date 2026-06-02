@@ -24,5 +24,6 @@ test('plugin manifest and hooks are valid JSON with expected lifecycle hooks', a
   assert.match(JSON.stringify(codexHooks), /\$EVO_BYPASS_HOME\/scripts\//);
   assert.doesNotMatch(JSON.stringify(claudeHooks), /node scripts\//);
   assert.doesNotMatch(JSON.stringify(codexHooks), /node scripts\//);
+  assert.doesNotMatch(JSON.stringify(claudeHooks), /CLAUDE_SESSION_ID/);
   assert.match(JSON.stringify(codexHooks), /--runtime codex/);
 });

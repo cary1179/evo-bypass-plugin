@@ -10,13 +10,19 @@ test('readBypassConfig returns safe defaults when config is missing', async () =
 
   const config = await readBypassConfig({ root });
 
-  assert.equal(config.knowledgeTarget, path.join(root, '.bypass', 'knowledge.md'));
+  assert.equal(config.knowledgeTarget, undefined);
   assert.deepEqual(config.viewer, {
     enabled: false,
     openMode: 'url',
     host: '127.0.0.1',
     port: 8765,
     openOnlyWhenSuggestions: true
+  });
+  assert.deepEqual(config.reviewer, {
+    mode: 'rules',
+    fallback: 'rules',
+    timeoutMs: 120000,
+    provider: undefined
   });
   assert.equal(config.configError, undefined);
 });
@@ -32,6 +38,17 @@ test('readBypassConfig accepts repository-local knowledge and viewer settings', 
       host: 'localhost',
       port: 9012,
       openOnlyWhenSuggestions: false
+    },
+    reviewer: {
+      mode: 'ai',
+      fallback: 'none',
+      timeoutMs: 45000,
+      provider: {
+        type: 'openai-compatible',
+        baseUrl: 'https://llm.example.test/v1',
+        apiKey: 'test-key',
+        model: 'memory-reviewer'
+      }
     }
   })}\n`);
 
@@ -45,6 +62,18 @@ test('readBypassConfig accepts repository-local knowledge and viewer settings', 
     port: 9012,
     openOnlyWhenSuggestions: false
   });
+  assert.deepEqual(config.reviewer, {
+    mode: 'ai',
+    fallback: 'none',
+    timeoutMs: 45000,
+    provider: {
+      type: 'openai-compatible',
+      baseUrl: 'https://llm.example.test/v1',
+      apiKey: 'test-key',
+      apiKeyEnv: undefined,
+      model: 'memory-reviewer'
+    }
+  });
 });
 
 test('readBypassConfig falls back when config json is malformed', async () => {
@@ -54,7 +83,7 @@ test('readBypassConfig falls back when config json is malformed', async () => {
 
   const config = await readBypassConfig({ root });
 
-  assert.equal(config.knowledgeTarget, path.join(root, '.bypass', 'knowledge.md'));
+  assert.equal(config.knowledgeTarget, undefined);
   assert.equal(config.viewer.enabled, false);
   assert.match(config.configError.message, /Invalid JSON/);
 });
@@ -70,17 +99,35 @@ test('readBypassConfig rejects unsafe or invalid config values', async () => {
       host: '',
       port: 70000,
       openOnlyWhenSuggestions: 'no'
+    },
+    reviewer: {
+      mode: 'magic',
+      fallback: 'later',
+      timeoutMs: -1,
+      provider: {
+        type: 'unknown',
+        baseUrl: '',
+        apiKey: 123,
+        apiKeyEnv: 456,
+        model: ''
+      }
     }
   })}\n`);
 
   const config = await readBypassConfig({ root });
 
-  assert.equal(config.knowledgeTarget, path.join(root, '.bypass', 'knowledge.md'));
+  assert.equal(config.knowledgeTarget, undefined);
   assert.deepEqual(config.viewer, {
     enabled: false,
     openMode: 'url',
     host: '127.0.0.1',
     port: 8765,
     openOnlyWhenSuggestions: true
+  });
+  assert.deepEqual(config.reviewer, {
+    mode: 'rules',
+    fallback: 'rules',
+    timeoutMs: 120000,
+    provider: undefined
   });
 });

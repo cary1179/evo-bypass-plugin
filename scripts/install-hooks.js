@@ -90,17 +90,19 @@ function appendHookGroup(existingGroups, incomingGroup) {
     return;
   }
 
-  const incomingCommands = new Set(commandsForGroups([incomingGroup]));
-  const existingCommands = new Set(commandsForGroups(existingGroups));
+  const incomingCommands = new Set(commandKeysForGroups([incomingGroup]));
+  const existingCommands = new Set(commandKeysForGroups(existingGroups));
   const seenCommands = new Set(existingCommands);
   const missingHooks = [];
   if (Array.isArray(incomingGroup.hooks)) {
     for (const hook of incomingGroup.hooks) {
       if (typeof hook?.command === 'string') {
-        if (seenCommands.has(hook.command)) {
+        const commandKey = commandIdentity(hook.command);
+        if (seenCommands.has(commandKey)) {
+          refreshExistingHook(existingGroups, hook);
           continue;
         }
-        seenCommands.add(hook.command);
+        seenCommands.add(commandKey);
       }
       missingHooks.push(hook);
     }
@@ -128,6 +130,20 @@ function appendHookGroup(existingGroups, incomingGroup) {
   }
 }
 
+function refreshExistingHook(existingGroups, incomingHook) {
+  const incomingKey = commandIdentity(incomingHook.command);
+  for (const group of existingGroups) {
+    if (!Array.isArray(group?.hooks)) {
+      continue;
+    }
+    const index = group.hooks.findIndex((hook) => commandIdentity(hook?.command) === incomingKey);
+    if (index >= 0) {
+      group.hooks[index] = cloneConfig(incomingHook);
+      return;
+    }
+  }
+}
+
 function findCompatibleGroup(existingGroups, incomingGroup) {
   return existingGroups.find((existingGroup) => {
     if (!existingGroup || typeof existingGroup !== 'object' || Array.isArray(existingGroup)) {
@@ -137,7 +153,7 @@ function findCompatibleGroup(existingGroups, incomingGroup) {
   });
 }
 
-function commandsForGroups(groups) {
+function commandKeysForGroups(groups) {
   const commands = [];
   for (const group of groups) {
     if (!Array.isArray(group?.hooks)) {
@@ -145,11 +161,18 @@ function commandsForGroups(groups) {
     }
     for (const hook of group.hooks) {
       if (typeof hook?.command === 'string') {
-        commands.push(hook.command);
+        commands.push(commandIdentity(hook.command));
       }
     }
   }
   return commands;
+}
+
+function commandIdentity(command) {
+  if (typeof command !== 'string') {
+    return '';
+  }
+  return command.replace(/\s+["']?\$CLAUDE_SESSION_ID["']?$/, '');
 }
 
 function replaceCommandsHome(value, repoRoot) {

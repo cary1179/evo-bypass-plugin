@@ -11,9 +11,18 @@ const DEFAULT_VIEWER = Object.freeze({
 });
 
 const OPEN_MODES = new Set(['off', 'url', 'browser']);
+const REVIEWER_MODES = new Set(['rules', 'ai', 'auto']);
+const REVIEWER_FALLBACKS = new Set(['rules', 'none']);
+const PROVIDER_TYPES = new Set(['openai-compatible']);
+
+const DEFAULT_REVIEWER = Object.freeze({
+  mode: 'rules',
+  fallback: 'rules',
+  timeoutMs: 120000,
+  provider: undefined
+});
 
 export async function readBypassConfig({ root = process.cwd() } = {}) {
-  const defaultTarget = path.join(root, '.bypass', 'knowledge.md');
   const configPath = path.join(root, '.bypass', 'config.json');
   let rawConfig = {};
   let configError;
@@ -32,8 +41,9 @@ export async function readBypassConfig({ root = process.cwd() } = {}) {
   }
 
   return {
-    knowledgeTarget: safeKnowledgeTarget({ root, configuredTarget: rawConfig.knowledgeTarget, defaultTarget }),
+    knowledgeTarget: safeKnowledgeTarget({ root, configuredTarget: rawConfig.knowledgeTarget }),
     viewer: normalizeViewer(rawConfig.viewer),
+    reviewer: normalizeReviewer(rawConfig.reviewer),
     configError
   };
 }
@@ -61,9 +71,46 @@ export function shouldExposeViewer({ viewer, suggestionCount }) {
   return true;
 }
 
-export function safeKnowledgeTarget({ root, configuredTarget, defaultTarget }) {
+export function normalizeReviewer(input) {
+  const reviewer = isObject(input) ? input : {};
+  return {
+    mode: REVIEWER_MODES.has(reviewer.mode) ? reviewer.mode : DEFAULT_REVIEWER.mode,
+    fallback: REVIEWER_FALLBACKS.has(reviewer.fallback) ? reviewer.fallback : DEFAULT_REVIEWER.fallback,
+    timeoutMs: Number.isInteger(reviewer.timeoutMs) && reviewer.timeoutMs > 0
+      ? reviewer.timeoutMs
+      : DEFAULT_REVIEWER.timeoutMs,
+    provider: normalizeProvider(reviewer.provider)
+  };
+}
+
+function normalizeProvider(input) {
+  const provider = isObject(input) ? input : {};
+  if (!PROVIDER_TYPES.has(provider.type) || typeof provider.baseUrl !== 'string' || provider.baseUrl.trim() === '') {
+    return undefined;
+  }
+
+  const model = typeof provider.model === 'string' && provider.model.trim() ? provider.model.trim() : '';
+  if (!model) {
+    return undefined;
+  }
+
+  const normalized = {
+    type: provider.type,
+    baseUrl: provider.baseUrl.trim().replace(/\/+$/, ''),
+    apiKey: typeof provider.apiKey === 'string' && provider.apiKey.trim() ? provider.apiKey.trim() : undefined,
+    apiKeyEnv: typeof provider.apiKeyEnv === 'string' && provider.apiKeyEnv.trim() ? provider.apiKeyEnv.trim() : undefined,
+    model
+  };
+
+  if (!normalized.apiKey && !normalized.apiKeyEnv) {
+    return undefined;
+  }
+  return normalized;
+}
+
+export function safeKnowledgeTarget({ root, configuredTarget }) {
   if (typeof configuredTarget !== 'string' || configuredTarget.trim() === '') {
-    return defaultTarget;
+    return undefined;
   }
 
   const resolvedRoot = path.resolve(root);
@@ -72,7 +119,7 @@ export function safeKnowledgeTarget({ root, configuredTarget, defaultTarget }) {
   if (relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative))) {
     return resolvedTarget;
   }
-  return defaultTarget;
+  return undefined;
 }
 
 export function safeSessionId(sessionId) {

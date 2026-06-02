@@ -27,7 +27,7 @@ Extend `.bypass/config.json` with a `viewer` object:
 
 ```json
 {
-  "knowledgeTarget": ".bypass/knowledge.md",
+  "knowledgeTarget": "docs/agent-knowledge.md",
   "viewer": {
     "enabled": true,
     "openMode": "url",

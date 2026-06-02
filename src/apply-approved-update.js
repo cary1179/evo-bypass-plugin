@@ -1,10 +1,11 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { resolveSessionPaths } from './core/session-paths.js';
+import { extractKnowledgeActions } from './core/retrospective-schema.js';
 
 export async function applyApprovedUpdate({ root = process.cwd(), sessionId }) {
   const paths = resolveSessionPaths({ root, sessionId });
-  const suggestions = await readJson(paths.suggestionsPath, 'suggestions.json is required');
+  const updateActions = await readApprovedActionCandidates(paths);
   const approval = await readJson(paths.approvalPath, 'approval.json is required before applying updates');
   const rootPath = path.resolve(root);
 
@@ -22,19 +23,15 @@ export async function applyApprovedUpdate({ root = process.cwd(), sessionId }) {
     throw new Error('approved_suggestion_ids must not contain duplicates');
   }
 
-  if (!Array.isArray(suggestions.suggestions)) {
-    throw new Error('suggestions.json must include suggestions array');
-  }
-
   const approvedIds = new Set(approval.approved_suggestion_ids);
-  const suggestionIds = new Set(suggestions.suggestions.map((suggestion) => suggestion.id));
+  const suggestionIds = new Set(updateActions.map((suggestion) => suggestion.id));
   const unknownIds = approval.approved_suggestion_ids.filter((id) => !suggestionIds.has(id));
 
   if (unknownIds.length > 0) {
     throw new Error('approved_suggestion_ids must match suggestions');
   }
 
-  const toApply = suggestions.suggestions
+  const toApply = updateActions
     .filter((suggestion) => approvedIds.has(suggestion.id))
     .map((suggestion) => validateApprovedSuggestion({ root: rootPath, suggestion }));
 
@@ -53,6 +50,38 @@ export async function applyApprovedUpdate({ root = process.cwd(), sessionId }) {
   const patchText = applied.map((item) => `applied ${item.id} -> ${item.target}`).join('\n');
   await fs.writeFile(paths.appliedPatchPath, `${patchText}\n`);
   return { applied };
+}
+
+async function readApprovedActionCandidates(paths) {
+  try {
+    const retrospective = await readJson(paths.retrospectivePath, 'retrospective.json is required');
+    const actions = extractKnowledgeActions(retrospective).map(findingToSuggestion);
+    if (!Array.isArray(actions)) {
+      throw new Error('retrospective.json must include retrospective findings');
+    }
+    return actions;
+  } catch (error) {
+    if (error.message !== 'retrospective.json is required') {
+      throw error;
+    }
+    const suggestions = await readJson(paths.suggestionsPath, 'suggestions.json is required');
+    if (!Array.isArray(suggestions.suggestions)) {
+      throw new Error('suggestions.json must include suggestions array');
+    }
+    return suggestions.suggestions;
+  }
+}
+
+function findingToSuggestion(finding) {
+  return {
+    id: finding.id,
+    kind: 'retrospective_knowledge',
+    confidence: finding.action.confidence,
+    target: finding.action.target,
+    evidence: finding.evidence,
+    proposed_text: finding.action.proposed_text,
+    rationale: finding.action.rationale || finding.diagnosis
+  };
 }
 
 function validateApprovedSuggestion({ root, suggestion }) {

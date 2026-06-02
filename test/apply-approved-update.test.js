@@ -21,7 +21,7 @@ test('applyApprovedUpdate refuses to write without approval', async () => {
   );
 });
 
-test('applyApprovedUpdate writes only approved suggestions and records patch', async () => {
+test('applyApprovedUpdate falls back to legacy suggestions.json when retrospective is absent', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-'));
   const paths = resolveSessionPaths({ root, sessionId: 'sess_apply_ok' });
   await fs.mkdir(paths.sessionDir, { recursive: true });
@@ -46,6 +46,54 @@ test('applyApprovedUpdate writes only approved suggestions and records patch', a
   assert.match(knowledge, /Project convention: use node:test/);
   assert.equal(knowledge.includes('Do not write me'), false);
   assert.match(patch, /sug_1/);
+});
+
+test('applyApprovedUpdate writes approved update_knowledge findings from retrospective', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-'));
+  const paths = resolveSessionPaths({ root, sessionId: 'sess_apply_retro' });
+  await fs.mkdir(paths.sessionDir, { recursive: true });
+  await fs.writeFile(paths.retrospectivePath, JSON.stringify({
+    session_id: 'sess_apply_retro',
+    summary: 'Found one action.',
+    retrospective: {
+      outcome: 'completed',
+      quality: 'minor_issues',
+      findings: [{
+        id: 'finding_knowledge',
+        category: 'knowledge',
+        severity: 'medium',
+        evidence: ['evt_1'],
+        diagnosis: 'Reusable convention.',
+        recommendation: 'Save it.',
+        action: {
+          type: 'update_knowledge',
+          confidence: 'high',
+          target: paths.defaultKnowledgePath,
+          proposed_text: 'Project convention: apply retrospective actions.',
+          rationale: 'Future applies should use retrospective actions.'
+        }
+      }, {
+        id: 'finding_code',
+        category: 'code',
+        severity: 'low',
+        evidence: ['evt_2'],
+        diagnosis: 'A test failed.',
+        recommendation: 'Fix later.',
+        action: { type: 'improve_code', confidence: 'low' }
+      }]
+    }
+  }));
+  await fs.writeFile(paths.approvalPath, JSON.stringify({
+    approved_at: new Date().toISOString(),
+    approved_suggestion_ids: ['finding_knowledge'],
+    approval_text: 'yes, apply finding_knowledge'
+  }));
+
+  const result = await applyApprovedUpdate({ root, sessionId: 'sess_apply_retro' });
+  const knowledge = await fs.readFile(paths.defaultKnowledgePath, 'utf8');
+
+  assert.equal(result.applied.length, 1);
+  assert.match(knowledge, /apply retrospective actions/);
 });
 
 test('applyApprovedUpdate rejects approval ids that are not an array', async () => {

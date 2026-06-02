@@ -17,7 +17,7 @@ Evo Bypass stores session artifacts under the current workspace:
   events.jsonl           – redacted tool-use events collected during the task
   retrospective.json     – reviewer output: task status, findings, and actions
   retrospective.md       – readable task retrospective report
-  suggestions.json       – derived legacy compatibility view for approved knowledge updates
+  suggestions.json       – derived legacy compatibility view for knowledge update actions
   approval.json          – user-approved update_knowledge action ids and approval message
   applied.patch          – diff of changes written by the updater
   reviewer.log           – full reviewer run log for debugging

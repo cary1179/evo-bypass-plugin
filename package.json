@@ -2,6 +2,7 @@
   "name": "evo-bypass",
   "version": "0.1.0",
   "description": "Advisory-first Claude Code and Codex hook package for session-based knowledge update suggestions.",
+  "license": "MIT",
   "type": "module",
   "private": true,
   "scripts": {

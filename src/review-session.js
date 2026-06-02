@@ -240,15 +240,15 @@ function reviewerLog({ result, malformedCount }) {
 
 // Temporary bridge for the current Stop CLI until its output is migrated to retrospectives.
 function withLegacySuggestionCompatibility(result) {
-  const suggestions = extractKnowledgeActions(result).map((action, index) => ({
-    id: result.retrospective.findings.find((finding) => finding.action === action)?.id || `sug_${index + 1}`,
+  const suggestions = extractKnowledgeActions(result).map((finding) => ({
+    id: finding.id,
     kind: 'project_convention',
-    confidence: action.confidence,
-    target: action.target,
-    target_reason: action.target_reason,
-    evidence: result.retrospective.findings.find((finding) => finding.action === action)?.evidence || [],
-    proposed_text: action.proposed_text,
-    rationale: action.rationale || ''
+    confidence: finding.action.confidence,
+    target: finding.action.target,
+    target_reason: finding.action.target_reason,
+    evidence: finding.evidence,
+    proposed_text: finding.action.proposed_text,
+    rationale: finding.action.rationale || ''
   }));
   Object.defineProperty(result, 'suggestions', {
     value: suggestions,

@@ -37,6 +37,8 @@ test('reviewSession converts convention evidence into update_knowledge finding',
   assert.equal(finding.action.target, path.join(root, 'AGENTS.md'));
   assert.match(finding.action.target_reason, /root AGENTS\.md/);
   assert.match(finding.action.proposed_text, /use node:test/);
+  assert.equal(result.suggestions[0].target, path.join(root, 'AGENTS.md'));
+  assert.match(result.suggestions[0].proposed_text, /use node:test/);
 });
 
 test('reviewSession converts test failure into code retrospective finding', async () => {
@@ -477,7 +479,7 @@ test('reviewSession skips configured AI provider until retrospective AI migratio
   }
 });
 
-test('reviewSession falls back to rules when AI provider returns invalid JSON', async () => {
+test('reviewSession uses rules fallback while AI retrospective migration is pending', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-'));
   await fs.mkdir(path.join(root, '.bypass'), { recursive: true });
   const server = await startAiReviewServer(async () => 'not json');

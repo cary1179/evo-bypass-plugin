@@ -26,6 +26,32 @@ test('listSessions returns compact summaries newest first', async () => {
       summary: 'Found 1 possible knowledge update(s).',
       suggestions: [{ id: 'sug_1', proposed_text: 'Project convention: use node:test.' }],
       suggestion_report_path: '/tmp/report.md'
+    },
+    retrospective: {
+      session_id: 'sess_old',
+      summary: 'Found 2 retrospective action(s).',
+      retrospective_report_path: '/tmp/retrospective.md',
+      retrospective: {
+        outcome: 'completed',
+        quality: 'minor_issues',
+        findings: [
+          finding({
+            id: 'finding_knowledge',
+            category: 'knowledge',
+            action: {
+              type: 'update_knowledge',
+              confidence: 'medium',
+              target: path.join(root, 'AGENTS.md'),
+              proposed_text: 'Project convention: use node:test.'
+            }
+          }),
+          finding({
+            id: 'finding_code',
+            category: 'code',
+            action: { type: 'improve_code', confidence: 'low' }
+          })
+        ]
+      }
     }
   });
   await writeSession(root, 'sess_new', {
@@ -49,6 +75,7 @@ test('listSessions returns compact summaries newest first', async () => {
   assert.equal(result.sessions[1].failure_count, 1);
   assert.deepEqual(result.sessions[1].signals, ['project_convention', 'test_failure']);
   assert.equal(result.sessions[1].suggestion_count, 1);
+  assert.equal(result.sessions[1].finding_count, 2);
   assert.equal(result.sessions[1].has_suggestion_report, true);
   assert.match(result.sessions[1].prompt_preview, /Use Node only/);
 });
@@ -71,6 +98,26 @@ test('getSessionDetail returns parsed artifacts and malformed event count', asyn
       summary: 'Found 1 possible knowledge update(s).',
       suggestions: [{ id: 'sug_detail', proposed_text: 'Project convention: keep reports short.' }]
     },
+    retrospective: {
+      session_id: 'sess_detail',
+      summary: 'Found one retrospective finding.',
+      retrospective: {
+        outcome: 'completed',
+        quality: 'minor_issues',
+        findings: [
+          finding({
+            id: 'finding_detail',
+            category: 'knowledge',
+            action: {
+              type: 'update_knowledge',
+              confidence: 'medium',
+              target: path.join(root, 'AGENTS.md'),
+              proposed_text: 'Project convention: keep reports short.'
+            }
+          })
+        ]
+      }
+    },
     reviewerLog: 'Found 1 possible knowledge update(s).\n'
   });
 
@@ -81,6 +128,7 @@ test('getSessionDetail returns parsed artifacts and malformed event count', asyn
   assert.equal(detail.events.length, 1);
   assert.equal(detail.events[0].id, 'evt_detail');
   assert.equal(detail.malformedEventCount, 1);
+  assert.equal(detail.retrospective.retrospective.findings.length, 1);
   assert.equal(detail.suggestions.suggestions.length, 1);
   assert.equal(detail.reviewerLog, 'Found 1 possible knowledge update(s).\n');
 });
@@ -110,7 +158,17 @@ test('session store degrades missing optional artifacts to empty values', async 
 
   assert.equal(summary.event_count, 0);
   assert.equal(summary.suggestion_count, 0);
+  assert.equal(summary.finding_count, 0);
   assert.deepEqual(detail.events, []);
+  assert.deepEqual(detail.retrospective, {
+    session_id: 'sess_sparse',
+    summary: 'No retrospective file found for this session.',
+    retrospective: {
+      outcome: 'unknown',
+      quality: 'smooth',
+      findings: []
+    }
+  });
   assert.deepEqual(detail.suggestions, {
     session_id: 'sess_sparse',
     summary: 'No suggestions file found for this session.',
@@ -134,11 +192,26 @@ function event({ id, sessionId, status, signals }) {
   };
 }
 
-async function writeSession(root, sessionId, { metadata, events, rawEventLines = [], suggestions, reviewerLog = '' }) {
+function finding({ id, category, action }) {
+  return {
+    id,
+    category,
+    severity: 'medium',
+    evidence: ['evt_old_1'],
+    diagnosis: 'A retrospective finding.',
+    recommendation: 'Review the recommended action.',
+    action
+  };
+}
+
+async function writeSession(root, sessionId, { metadata, events, rawEventLines = [], suggestions, retrospective, reviewerLog = '' }) {
   const paths = resolveSessionPaths({ root, sessionId });
   await fs.mkdir(paths.sessionDir, { recursive: true });
   await fs.writeFile(paths.metadataPath, `${JSON.stringify(metadata, null, 2)}\n`);
   await fs.writeFile(paths.eventsPath, `${events.map((item) => JSON.stringify(item)).concat(rawEventLines).join('\n')}\n`);
   await fs.writeFile(paths.suggestionsPath, `${JSON.stringify(suggestions, null, 2)}\n`);
+  if (retrospective) {
+    await fs.writeFile(paths.retrospectivePath, `${JSON.stringify(retrospective, null, 2)}\n`);
+  }
   await fs.writeFile(paths.reviewerLogPath, reviewerLog);
 }

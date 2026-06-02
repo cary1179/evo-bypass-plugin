@@ -30,7 +30,9 @@ test('reviewSession converts convention evidence into update_knowledge finding',
   });
 
   const result = await reviewSession({ root, sessionId: 'sess_retro_knowledge', bypassDir });
+  const paths = resolveSessionPaths({ root, sessionId: 'sess_retro_knowledge' });
   const finding = result.retrospective.findings[0];
+  const legacySuggestions = JSON.parse(await fs.readFile(paths.suggestionsPath, 'utf8'));
 
   assert.equal(finding.category, 'knowledge');
   assert.equal(finding.action.type, 'update_knowledge');
@@ -39,6 +41,8 @@ test('reviewSession converts convention evidence into update_knowledge finding',
   assert.match(finding.action.proposed_text, /use node:test/);
   assert.equal(result.suggestions[0].target, path.join(root, 'AGENTS.md'));
   assert.match(result.suggestions[0].proposed_text, /use node:test/);
+  assert.equal(legacySuggestions.suggestions[0].target, path.join(root, 'AGENTS.md'));
+  assert.match(legacySuggestions.suggestions[0].proposed_text, /use node:test/);
 });
 
 test('reviewSession converts test failure into code retrospective finding', async () => {

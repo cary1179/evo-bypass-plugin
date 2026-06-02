@@ -14,12 +14,15 @@ export async function reviewSession({ root = process.cwd(), sessionId, bypassDir
   const reviewed = await reviewRetrospective({ root: paths.root, sessionId, events, candidates, reviewer: config.reviewer });
   const result = normalizeRetrospectiveResult(reviewed);
   result.retrospective_report_path = await writeRetrospectiveReport({ bypassDir, result });
+  const legacyResult = withLegacySuggestionCompatibility(result);
 
   await fs.mkdir(paths.sessionDir, { recursive: true });
   await fs.writeFile(paths.retrospectivePath, `${JSON.stringify(result, null, 2)}\n`);
+  // Legacy compatibility view until apply-approved-update reads retrospective.json directly.
+  await fs.writeFile(paths.suggestionsPath, `${JSON.stringify(legacySuggestionView(legacyResult), null, 2)}\n`);
   await fs.writeFile(paths.retrospectiveMarkdownPath, formatRetrospectiveMarkdown(result));
   await fs.writeFile(paths.reviewerLogPath, reviewerLog({ result, malformedCount }));
-  return withLegacySuggestionCompatibility(result);
+  return legacyResult;
 }
 
 async function buildCandidates({ root, events, configuredTarget }) {
@@ -259,6 +262,15 @@ function withLegacySuggestionCompatibility(result) {
     enumerable: false
   });
   return result;
+}
+
+function legacySuggestionView(result) {
+  return {
+    session_id: result.session_id,
+    summary: result.summary,
+    suggestions: result.suggestions,
+    suggestion_report_path: result.suggestion_report_path
+  };
 }
 
 function extractKnowledgeText(text) {

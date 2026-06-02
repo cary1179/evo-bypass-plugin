@@ -20,6 +20,14 @@ test('resolveSessionPaths returns stable repository-local artifact paths', () =>
   assert.equal(paths.defaultKnowledgePath, path.join(root, 'AGENTS.md'));
 });
 
+test('resolveSessionPaths includes retrospective artifact paths', () => {
+  const paths = resolveSessionPaths({ root: '/tmp/project', sessionId: 'sess_paths' });
+
+  assert.equal(paths.retrospectivePath, path.join('/tmp/project', '.bypass', 'sessions', 'sess_paths', 'retrospective.json'));
+  assert.equal(paths.retrospectiveMarkdownPath, path.join('/tmp/project', '.bypass', 'sessions', 'sess_paths', 'retrospective.md'));
+  assert.equal(paths.suggestionsPath, path.join('/tmp/project', '.bypass', 'sessions', 'sess_paths', 'suggestions.json'));
+});
+
 test('resolveSessionPaths requires a string sessionId', () => {
   assert.throws(() => resolveSessionPaths({}), /sessionId is required/);
   assert.throws(() => resolveSessionPaths({ sessionId: '' }), /sessionId is required/);

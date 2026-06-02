@@ -19,6 +19,8 @@ export function resolveSessionPaths({ root = process.cwd(), sessionId }) {
     sessionDir,
     metadataPath: path.join(sessionDir, 'metadata.json'),
     eventsPath: path.join(sessionDir, 'events.jsonl'),
+    retrospectivePath: path.join(sessionDir, 'retrospective.json'),
+    retrospectiveMarkdownPath: path.join(sessionDir, 'retrospective.md'),
     suggestionsPath: path.join(sessionDir, 'suggestions.json'),
     approvalPath: path.join(sessionDir, 'approval.json'),
     appliedPatchPath: path.join(sessionDir, 'applied.patch'),

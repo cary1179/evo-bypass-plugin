@@ -5,20 +5,21 @@
 
 Evo Bypass is an advisory-first knowledge update helper for Claude Code and Codex.
 
-It runs beside the main agent through lifecycle hooks, records a compact log of what happened during a task, reviews that log when the task ends, and suggests local knowledge updates that may be useful for future work.
+It runs beside the main agent through lifecycle hooks, records a compact log of what happened during a task, reviews that log when the task ends, and recommends follow-up actions that may be useful for future work.
 
-It does **not** update knowledge automatically. The main agent must show the suggestions and ask the user before running the updater.
+It does **not** update knowledge automatically. The main agent must show the retrospective and ask the user before running the updater.
 ## What It Captures
 Evo Bypass stores session artifacts under the current workspace:
 
 ```text
 .bypass/sessions/<session-id>/
-  metadata.json      – session start time, workspace root, agent type
-  events.jsonl       – redacted tool-use events collected during the task
-  suggestions.json   – reviewer output: proposed knowledge updates
-  approval.json      – user-approved suggestion ids and approval message
-  applied.patch      – diff of changes written by the updater
-  reviewer.log       – full reviewer run log for debugging
+  metadata.json          – session start time, workspace root, agent type
+  events.jsonl           – redacted tool-use events collected during the task
+  retrospective.json     – reviewer output: task status, findings, and actions
+  retrospective.md       – readable task retrospective report
+  approval.json          – user-approved update_knowledge action ids and approval message
+  applied.patch          – diff of changes written by the updater
+  reviewer.log           – full reviewer run log for debugging
 ```
 
 The collector records summaries, paths, exit status, redacted evidence snippets, and signals such as test failures, dependency changes, and project conventions. It avoids storing large raw outputs and redacts common secret patterns before writing events.
@@ -31,18 +32,21 @@ The collector records summaries, paths, exit status, redacted evidence snippets,
   
 2. `PostToolUse` and `PostToolUseFailure` append redacted tool events.
   
-3. `Stop` runs the reviewer and writes `suggestions.json`.
+3. `Stop` runs the reviewer and writes `retrospective.json`.
   
 4. If the reviewer finds durable knowledge, it writes a Markdown report under the user-level bypass directory.
   
-5. The reviewer tells the main agent to read that report and ask the user whether to apply specific suggestions.
+5. The reviewer tells the main agent to read that report and ask the user whether to apply specific `update_knowledge` actions.
   
 6. Only after approval, `scripts/apply-approved-update.js` writes approved entries.
   
 
 By default, approved updates are routed to the most relevant `AGENTS.md`.
-## Suggestion Types
-Reviewer suggestions use these kinds:
+## Task Retrospectives
+
+Every Stop hook writes a task retrospective. The retrospective explains whether the task completed smoothly, which concrete failures or workflow issues appeared, and what action is recommended. Knowledge updates are represented as `update_knowledge` actions inside retrospective findings. Other actions, such as `create_skill`, `improve_code`, or `adjust_agent_usage`, are advisory and are not applied automatically.
+## Knowledge Update Kinds
+Legacy knowledge suggestions use these kinds:
 
 - `user_preference`
   
@@ -57,7 +61,7 @@ Reviewer suggestions use these kinds:
 - `external_fact`
   
 
-Each suggestion includes evidence ids, confidence, a target knowledge file, proposed text, and rationale.
+Each `update_knowledge` action includes evidence ids, confidence, a target knowledge file, proposed text, and rationale.
 
 ![Detected knowledge types](./docs/assets/readme/detected-knowledge-types.png)
 ## Stop Hook Reports
@@ -66,14 +70,14 @@ Each suggestion includes evidence ids, confidence, a target knowledge file, prop
 When a completed session has possible knowledge updates, Evo Bypass writes the detailed review report to:
 
 ```text
-~/.bypass/suggestion/<session-id>.md
+~/.bypass/retrospective/<session-id>.md
 ```
 
 The Stop hook response only includes the path to that Markdown file, so the hook output stays short while the main agent can still inspect the full details.
 
-For Codex, the Stop hook emits valid JSON. If suggestions exist, `continue` is `false` so the main agent does not silently finish before telling the user about the report. If there are no suggestions, no Markdown report is written and `continue` is `true`.
+For Codex, the Stop hook emits valid JSON. If `update_knowledge` actions exist, `continue` is `false` so the main agent does not silently finish before telling the user about the report. If there are no knowledge updates, `continue` is `true`.
 
-No-suggestion sessions return:
+No-update sessions return:
 
 ```text
 本次任务无待更新知识。
@@ -134,24 +138,26 @@ For manual installation, use `.claude-plugin/plugin.json` as the plugin manifest
   
 
 The Claude `Stop` hook uses `asyncRewake` so the reviewer can send the knowledge update report back to the main agent after the task completes.
-## Applying Suggestions
+## Applying Approved Updates
 After a task ends, inspect:
 
 ```text
-.bypass/sessions/<session-id>/suggestions.json
+.bypass/sessions/<session-id>/retrospective.json
 ```
 
-If the user approves one or more suggestion ids, run:
+If the user approves one or more `update_knowledge` action ids, run:
 
 ```bash
-node scripts/apply-approved-update.js <session-id> <sug_1,sug_2> "user approved these updates"
+node scripts/apply-approved-update.js <session-id> <action_1,action_2> "user approved these updates"
 ```
 
-The updater refuses to write unless approval is explicit. It also rejects unknown suggestion ids, duplicate approvals, unsafe target paths, malformed suggestions, and missing approval text.
+The updater refuses to write unless approval is explicit. It also rejects unknown action ids, duplicate approvals, unsafe target paths, malformed retrospective findings, and missing approval text.
+
+Legacy sessions may still have `suggestions.json`; the apply command supports that fallback for old sessions.
 
 ![No silent memory mutation](./docs/assets/readme/no-silent-memory-mutation.png)
 ## Configure Knowledge Routing
-By default, Evo Bypass routes suggestions to `AGENTS.md` files. If an event includes a scoped path, the reviewer prefers the nearest existing directory-level `AGENTS.md`; if none exists, it may suggest creating a scoped `AGENTS.md` for that directory. If no scoped path is available, it uses the repository root `AGENTS.md`.
+By default, Evo Bypass routes knowledge updates to `AGENTS.md` files. If an event includes a scoped path, the reviewer prefers the nearest existing directory-level `AGENTS.md`; if none exists, it may recommend creating a scoped `AGENTS.md` for that directory. If no scoped path is available, it uses the repository root `AGENTS.md`.
 
 To force a repository-local target, create:
 

@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Evo Bypass Task Retrospective",
+  "type": "object",
+  "required": ["session_id", "summary", "retrospective"],
+  "properties": {
+    "session_id": { "type": "string" },
+    "summary": { "type": "string" },
+    "retrospective": {
+      "type": "object",
+      "required": ["outcome", "quality", "findings"],
+      "properties": {
+        "outcome": { "enum": ["completed", "partial", "failed", "unknown"] },
+        "quality": { "enum": ["smooth", "minor_issues", "significant_issues"] },
+        "findings": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id", "category", "severity", "evidence", "diagnosis", "recommendation", "action"],
+            "properties": {
+              "id": { "type": "string" },
+              "category": { "enum": ["knowledge", "skill", "code", "agent_usage", "environment"] },
+              "severity": { "enum": ["low", "medium", "high"] },
+              "evidence": { "type": "array", "items": { "type": "string" } },
+              "diagnosis": { "type": "string" },
+              "recommendation": { "type": "string" },
+              "action": {
+                "type": "object",
+                "required": ["type", "confidence"],
+                "properties": {
+                  "type": { "enum": ["update_knowledge", "create_skill", "improve_code", "adjust_agent_usage", "fix_environment", "no_action"] },
+                  "confidence": { "enum": ["low", "medium", "high"] },
+                  "target": { "type": "string" },
+                  "target_reason": { "type": "string" },
+                  "proposed_text": { "type": "string" },
+                  "rationale": { "type": "string" }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "retrospective_report_path": { "type": "string" }
+  }
+}

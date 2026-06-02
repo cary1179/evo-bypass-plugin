@@ -1,6 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "Evo Bypass Knowledge Suggestion",
+  "title": "Evo Bypass Legacy Knowledge Suggestion",
+  "description": "Legacy schema for pre-retrospective sessions. New sessions use retrospective.schema.json.",
   "type": "object",
   "required": ["session_id", "summary", "suggestions"],
   "properties": {

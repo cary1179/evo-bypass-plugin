@@ -1,6 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
+import path from 'node:path';
+
+const repoRoot = process.cwd();
 
 test('plugin manifest and hooks are valid JSON with expected lifecycle hooks', async () => {
   const pkg = JSON.parse(await fs.readFile('package.json', 'utf8'));
@@ -26,4 +29,11 @@ test('plugin manifest and hooks are valid JSON with expected lifecycle hooks', a
   assert.doesNotMatch(JSON.stringify(codexHooks), /node scripts\//);
   assert.doesNotMatch(JSON.stringify(claudeHooks), /CLAUDE_SESSION_ID/);
   assert.match(JSON.stringify(codexHooks), /--runtime codex/);
+});
+
+test('retrospective schema is shipped with package files', async () => {
+  const schema = JSON.parse(await fs.readFile(path.join(repoRoot, 'schemas', 'retrospective.schema.json'), 'utf8'));
+
+  assert.equal(schema.title, 'Evo Bypass Task Retrospective');
+  assert.equal(schema.properties.retrospective.properties.findings.items.properties.action.properties.type.enum.includes('update_knowledge'), true);
 });

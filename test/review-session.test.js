@@ -433,31 +433,13 @@ test('reviewSession proposes a missing scoped AGENTS file for path specific know
   assert.match(result.retrospective.findings[0].action.target_reason, /missing scoped AGENTS\.md/);
 });
 
-test('reviewSession uses configured AI provider to generate findings from session events', async () => {
+test('reviewSession skips configured AI provider until retrospective AI migration', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-'));
   await fs.mkdir(path.join(root, '.bypass'), { recursive: true });
   const requests = [];
   const server = await startAiReviewServer(async ({ body }) => {
     requests.push(body);
-    const userPayload = JSON.parse(body.messages[1].content);
-    assert.equal(body.model, 'memory-reviewer');
-    assert.match(body.messages[0].content, /Evo Bypass Reviewer/);
-    assert.equal(userPayload.events[0].id, 'evt_ai');
-    assert.equal(userPayload.candidates[0].target, path.join(root, 'packages', 'api', 'AGENTS.md'));
-    return {
-      suggestions: [
-        {
-          id: 'sug_ai',
-          kind: 'project_convention',
-          confidence: 'high',
-          target: userPayload.candidates[0].target,
-          target_reason: 'AI selected the scoped API AGENTS.md from path evidence.',
-          evidence: ['evt_ai'],
-          proposed_text: 'Project convention: prefer contract tests for API changes.',
-          rationale: 'The event describes a durable API testing convention.'
-        }
-      ]
-    };
+    return { suggestions: [] };
   });
 
   try {
@@ -488,15 +470,8 @@ test('reviewSession uses configured AI provider to generate findings from sessio
 
     const result = await reviewSession({ root, sessionId: 'sess_ai_review' });
 
-    assert.equal(requests.length, 1);
-    assert.equal(requests[0].messages[1].role, 'user');
-    assert.equal(requests[0].temperature, 0);
-    assert.equal(requests[0].response_format.type, 'json_object');
-    assert.equal(requests[0].headers.authorization, 'Bearer test-api-key');
-    assert.equal(result.retrospective.findings.length, 1);
-    assert.equal(result.retrospective.findings[0].id, 'sug_ai');
-    assert.equal(result.retrospective.findings[0].action.target, path.join(root, 'packages', 'api', 'AGENTS.md'));
-    assert.equal(result.retrospective.findings[0].action.proposed_text, 'Project convention: prefer contract tests for API changes.');
+    assert.equal(requests.length, 0);
+    assert.deepEqual(result.retrospective.findings, []);
   } finally {
     await server.close();
   }

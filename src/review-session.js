@@ -5,7 +5,6 @@ import { resolveSessionPaths } from './core/session-paths.js';
 import { normalizeRetrospectiveResult, extractKnowledgeActions } from './core/retrospective-schema.js';
 import { readBypassConfig } from './core/config.js';
 import { routeKnowledgeTarget } from './knowledge-routing.js';
-import { reviewWithAiProvider } from './ai-reviewer.js';
 
 export async function reviewSession({ root = process.cwd(), sessionId, bypassDir = defaultBypassDir() }) {
   const paths = resolveSessionPaths({ root, sessionId });
@@ -36,15 +35,10 @@ async function buildCandidates({ root, events, configuredTarget }) {
   return candidates;
 }
 
-async function reviewRetrospective({ root, sessionId, events, candidates, reviewer }) {
+async function reviewRetrospective({ sessionId, events, candidates, reviewer }) {
   if (shouldUseAiReviewer(reviewer)) {
-    try {
-      const suggestions = await reviewWithAiProvider({ root, sessionId, events, candidates, reviewer });
-      return { sessionId, findings: findingsFromSuggestions(suggestions) };
-    } catch (error) {
-      if (reviewer.fallback !== 'rules') {
-        return { sessionId, findings: [] };
-      }
+    if (reviewer.fallback !== 'rules') {
+      return { sessionId, findings: [] };
     }
   }
 
@@ -207,25 +201,6 @@ function findingsForEvent(event, route) {
     }];
   }
   return [];
-}
-
-function findingsFromSuggestions(suggestions) {
-  return (Array.isArray(suggestions) ? suggestions : []).map((suggestion) => ({
-    id: suggestion.id,
-    category: 'knowledge',
-    severity: suggestion.confidence === 'high' ? 'medium' : 'low',
-    evidence: suggestion.evidence,
-    diagnosis: suggestion.rationale || 'The reviewer identified durable knowledge from the session.',
-    recommendation: 'Ask whether to save this knowledge update.',
-    action: {
-      type: 'update_knowledge',
-      confidence: suggestion.confidence,
-      target: suggestion.target,
-      target_reason: suggestion.target_reason,
-      proposed_text: suggestion.proposed_text,
-      rationale: suggestion.rationale
-    }
-  }));
 }
 
 function dedupeFindings(findings) {

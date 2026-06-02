@@ -439,13 +439,33 @@ test('reviewSession proposes a missing scoped AGENTS file for path specific know
   assert.match(result.retrospective.findings[0].action.target_reason, /missing scoped AGENTS\.md/);
 });
 
-test('reviewSession skips configured AI provider until retrospective AI migration', async () => {
+test('reviewSession AI reviewer accepts valid retrospective findings', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-'));
   await fs.mkdir(path.join(root, '.bypass'), { recursive: true });
   const requests = [];
   const server = await startAiReviewServer(async ({ body }) => {
     requests.push(body);
-    return { suggestions: [] };
+    return {
+      retrospective: {
+        outcome: 'completed',
+        quality: 'minor_issues',
+        findings: [{
+          id: 'finding_ai_knowledge',
+          category: 'knowledge',
+          severity: 'medium',
+          evidence: ['evt_ai'],
+          diagnosis: 'AI found a reusable convention.',
+          recommendation: 'Ask whether to save it.',
+          action: {
+            type: 'update_knowledge',
+            confidence: 'high',
+            target: 'AGENTS.md',
+            proposed_text: 'Project convention: keep AI review JSON strict.',
+            rationale: 'Future reviewer changes need strict schemas.'
+          }
+        }]
+      }
+    };
   });
 
   try {
@@ -468,31 +488,54 @@ test('reviewSession skips configured AI provider until retrospective AI migratio
       hook: 'PostToolUse',
       tool: 'Edit',
       summary: 'Edit completed PostToolUse',
-      paths: ['packages/api/server.js'],
+      paths: [],
       status: 'success',
       signals: [],
       evidence: ['The API package should prefer contract tests for endpoint behavior.']
     });
 
     const result = await reviewSession({ root, sessionId: 'sess_ai_review' });
+    const finding = result.retrospective.findings[0];
 
-    assert.equal(requests.length, 0);
-    assert.deepEqual(result.retrospective.findings, []);
+    assert.equal(requests.length, 1);
+    assert.equal(result.retrospective.findings.length, 1);
+    assert.equal(finding.action.type, 'update_knowledge');
+    assert.equal(finding.action.target, path.join(root, 'AGENTS.md'));
   } finally {
     await server.close();
   }
 });
 
-test('reviewSession uses rules fallback while AI retrospective migration is pending', async () => {
+test('reviewSession AI reviewer drops findings with unknown evidence ids', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-'));
   await fs.mkdir(path.join(root, '.bypass'), { recursive: true });
-  const server = await startAiReviewServer(async () => 'not json');
+  const server = await startAiReviewServer(async () => ({
+    retrospective: {
+      outcome: 'completed',
+      quality: 'minor_issues',
+      findings: [{
+        id: 'finding_missing_evidence',
+        category: 'knowledge',
+        severity: 'medium',
+        evidence: ['evt_missing'],
+        diagnosis: 'AI found a reusable convention.',
+        recommendation: 'Ask whether to save it.',
+        action: {
+          type: 'update_knowledge',
+          confidence: 'high',
+          target: 'AGENTS.md',
+          proposed_text: 'Project convention: keep AI review JSON strict.',
+          rationale: 'Future reviewer changes need strict schemas.'
+        }
+      }]
+    }
+  }));
 
   try {
     await fs.writeFile(path.join(root, '.bypass', 'config.json'), `${JSON.stringify({
       reviewer: {
         mode: 'ai',
-        fallback: 'rules',
+        fallback: 'none',
         provider: {
           type: 'openai-compatible',
           baseUrl: server.baseUrl,
@@ -513,8 +556,7 @@ test('reviewSession uses rules fallback while AI retrospective migration is pend
 
     const result = await reviewSession({ root, sessionId: 'sess_ai_fallback' });
 
-    assert.equal(result.retrospective.findings.length, 1);
-    assert.equal(result.retrospective.findings[0].action.proposed_text, 'Project convention: keep AI review fallback deterministic.');
+    assert.deepEqual(result.retrospective.findings, []);
   } finally {
     await server.close();
   }

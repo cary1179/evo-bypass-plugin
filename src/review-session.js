@@ -5,6 +5,7 @@ import { resolveSessionPaths } from './core/session-paths.js';
 import { normalizeRetrospectiveResult, extractKnowledgeActions } from './core/retrospective-schema.js';
 import { readBypassConfig } from './core/config.js';
 import { routeKnowledgeTarget } from './knowledge-routing.js';
+import { reviewWithAiProvider } from './ai-reviewer.js';
 
 export async function reviewSession({ root = process.cwd(), sessionId, bypassDir = defaultBypassDir() }) {
   const paths = resolveSessionPaths({ root, sessionId });
@@ -38,10 +39,14 @@ async function buildCandidates({ root, events, configuredTarget }) {
   return candidates;
 }
 
-async function reviewRetrospective({ sessionId, events, candidates, reviewer }) {
+async function reviewRetrospective({ root, sessionId, events, candidates, reviewer }) {
   if (shouldUseAiReviewer(reviewer)) {
-    if (reviewer.fallback !== 'rules') {
-      return { sessionId, findings: [] };
+    try {
+      return await reviewWithAiProvider({ root, sessionId, events, candidates, reviewer });
+    } catch {
+      if (reviewer.fallback !== 'rules') {
+        return { sessionId, findings: [] };
+      }
     }
   }
 

@@ -9,45 +9,73 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { collectEvent } from '../src/collect-event.js';
 import { reviewSession } from '../src/review-session.js';
+import { resolveSessionPaths } from '../src/core/session-paths.js';
 
 const repoRoot = fileURLToPath(new URL('..', import.meta.url));
 const reviewCliPath = path.join(repoRoot, 'scripts', 'review-session.js');
 
-test('reviewSession suggests durable knowledge from convention evidence', async () => {
+test('reviewSession converts convention evidence into update_knowledge finding', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-'));
   const bypassDir = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-home-'));
-  await collectEvent({ root, payload: { hook_event_name: 'UserPromptSubmit', session_id: 'sess_review', prompt: 'Use Node only' } });
+  await collectEvent({ root, payload: { hook_event_name: 'UserPromptSubmit', session_id: 'sess_retro_knowledge', prompt: 'Use Node only' } });
   await collectEvent({
     root,
     payload: {
       hook_event_name: 'PostToolUse',
-      session_id: 'sess_review',
+      session_id: 'sess_retro_knowledge',
       tool_name: 'Bash',
       tool_input: { command: 'npm test' },
       tool_response: { exit_code: 0, output: 'Project convention: use node:test and avoid runtime dependencies.' }
     }
   });
 
-  const result = await reviewSession({ root, sessionId: 'sess_review', bypassDir });
-  assert.equal(result.session_id, 'sess_review');
-  assert.equal(result.suggestions.length, 1);
-  assert.equal(result.suggestions[0].kind, 'project_convention');
-  assert.equal(result.suggestions[0].target, path.join(root, 'AGENTS.md'));
-  assert.match(result.suggestions[0].target_reason, /root AGENTS\.md/);
-  assert.equal(result.suggestion_report_path, path.join(bypassDir, 'suggestion', 'sess_review.md'));
-  const report = await fs.readFile(result.suggestion_report_path, 'utf8');
-  assert.match(report, /Project convention: use node:test and avoid runtime dependencies\./);
+  const result = await reviewSession({ root, sessionId: 'sess_retro_knowledge', bypassDir });
+  const finding = result.retrospective.findings[0];
+
+  assert.equal(finding.category, 'knowledge');
+  assert.equal(finding.action.type, 'update_knowledge');
+  assert.equal(finding.action.target, path.join(root, 'AGENTS.md'));
+  assert.match(finding.action.target_reason, /root AGENTS\.md/);
+  assert.match(finding.action.proposed_text, /use node:test/);
 });
 
-test('reviewSession emits no suggestions without durable signals', async () => {
+test('reviewSession converts test failure into code retrospective finding', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-'));
+  const bypassDir = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-home-'));
+  await collectEvent({ root, payload: { hook_event_name: 'UserPromptSubmit', session_id: 'sess_retro_test_failure', prompt: 'fix tests' } });
+  await collectEvent({
+    root,
+    payload: {
+      hook_event_name: 'PostToolUse',
+      session_id: 'sess_retro_test_failure',
+      tool_name: 'Bash',
+      tool_input: { command: 'npm test' },
+      tool_response: { exit_code: 1, output: 'not ok 1 test failed' }
+    }
+  });
+
+  const result = await reviewSession({ root, sessionId: 'sess_retro_test_failure', bypassDir });
+  const finding = result.retrospective.findings[0];
+
+  assert.equal(finding.category, 'code');
+  assert.equal(finding.action.type, 'improve_code');
+  assert.match(finding.diagnosis, /test failure/i);
+});
+
+test('reviewSession writes a smooth retrospective without durable signals', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-'));
   const bypassDir = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-home-'));
   await collectEvent({ root, payload: { hook_event_name: 'UserPromptSubmit', session_id: 'sess_empty', prompt: 'hello' } });
 
   const result = await reviewSession({ root, sessionId: 'sess_empty', bypassDir });
-  assert.deepEqual(result.suggestions, []);
-  assert.equal(result.suggestion_report_path, undefined);
-  await assert.rejects(fs.stat(path.join(bypassDir, 'suggestion', 'sess_empty.md')), { code: 'ENOENT' });
+  const paths = resolveSessionPaths({ root, sessionId: 'sess_empty' });
+
+  assert.equal(result.session_id, 'sess_empty');
+  assert.equal(result.retrospective.quality, 'smooth');
+  assert.deepEqual(result.retrospective.findings, []);
+  assert.equal(result.retrospective_report_path, path.join(bypassDir, 'retrospective', 'sess_empty.md'));
+  assert.match(await fs.readFile(paths.retrospectivePath, 'utf8'), /"quality": "smooth"/);
+  assert.match(await fs.readFile(paths.retrospectiveMarkdownPath, 'utf8'), /No significant failures/);
 });
 
 test('review-session CLI prints a report for an existing session', async () => {
@@ -71,7 +99,7 @@ test('review-session CLI prints a report for an existing session', async () => {
   });
 
   assert.equal(result.status, 0);
-  const reportPath = path.join(bypassDir, 'suggestion', 'sess_cli.md');
+  const reportPath = path.join(bypassDir, 'retrospective', 'sess_cli.md');
   assert.match(result.stdout, new RegExp(`请阅读 ${escapeRegExp(reportPath)} 文件`));
   const report = await fs.readFile(reportPath, 'utf8');
   assert.match(report, /Project convention: keep report details in markdown\./);
@@ -101,7 +129,7 @@ test('review-session CLI resolves Claude session id from stdin payload without e
   });
 
   assert.equal(result.status, 0);
-  const reportPath = path.join(bypassDir, 'suggestion', 'sess_claude_stdin.md');
+  const reportPath = path.join(bypassDir, 'retrospective', 'sess_claude_stdin.md');
   assert.match(result.stdout, new RegExp(`请阅读 ${escapeRegExp(reportPath)} 文件`));
   const report = await fs.readFile(reportPath, 'utf8');
   assert.match(report, /Project convention: resolve Claude stop session from stdin\./);
@@ -133,7 +161,7 @@ test('review-session CLI prints valid Codex stop hook JSON output', async () => 
   const output = JSON.parse(result.stdout);
   assert.equal(output.continue, false);
   assert.equal(output.suppressOutput, false);
-  const reportPath = path.join(bypassDir, 'suggestion', 'sess_codex_cli.md');
+  const reportPath = path.join(bypassDir, 'retrospective', 'sess_codex_cli.md');
   assert.match(output.systemMessage, new RegExp(`请阅读 ${escapeRegExp(reportPath)} 文件`));
   assert.match(output.systemMessage, /请告知用户/);
   assert.doesNotMatch(output.systemMessage, /Project convention: keep hook reports readable\./);
@@ -180,7 +208,7 @@ test('review-session CLI appends stop hook execution log', async () => {
   assert.match(lines[1].reportPath, /sess_stop_log\.md$/);
 });
 
-test('review-session CLI does not write markdown when there are no suggestions', async () => {
+test('review-session CLI writes retrospective markdown when there are no suggestions', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-'));
   const bypassDir = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-home-'));
   await collectEvent({ root, payload: { hook_event_name: 'UserPromptSubmit', session_id: 'sess_codex_empty', prompt: 'hello' } });
@@ -196,7 +224,7 @@ test('review-session CLI does not write markdown when there are no suggestions',
   const output = JSON.parse(result.stdout);
   assert.equal(output.continue, true);
   assert.equal(output.systemMessage, '本次任务无待更新知识。');
-  await assert.rejects(fs.stat(path.join(bypassDir, 'suggestion', 'sess_codex_empty.md')), { code: 'ENOENT' });
+  await fs.stat(path.join(bypassDir, 'retrospective', 'sess_codex_empty.md'));
 });
 
 test('review-session CLI includes viewer URL when configured and suggestions exist', async () => {
@@ -319,8 +347,8 @@ test('reviewSession skips malformed JSONL lines and suggests from valid events',
 
   const result = await reviewSession({ root, sessionId: 'sess_malformed' });
 
-  assert.equal(result.suggestions.length, 1);
-  assert.equal(result.suggestions[0].proposed_text, 'Project convention: keep review notes short.');
+  assert.equal(result.retrospective.findings.length, 1);
+  assert.equal(result.retrospective.findings[0].action.proposed_text, 'Project convention: keep review notes short.');
 });
 
 test('reviewSession falls back when configured knowledge target escapes root', async () => {
@@ -339,7 +367,7 @@ test('reviewSession falls back when configured knowledge target escapes root', a
 
   const result = await reviewSession({ root, sessionId: 'sess_bad_target' });
 
-  assert.equal(result.suggestions[0].target, path.join(root, 'AGENTS.md'));
+  assert.equal(result.retrospective.findings[0].action.target, path.join(root, 'AGENTS.md'));
 });
 
 test('reviewSession falls back when reviewer config is malformed JSON', async () => {
@@ -358,8 +386,8 @@ test('reviewSession falls back when reviewer config is malformed JSON', async ()
 
   const result = await reviewSession({ root, sessionId: 'sess_bad_config_json' });
 
-  assert.equal(result.suggestions.length, 1);
-  assert.equal(result.suggestions[0].target, path.join(root, 'AGENTS.md'));
+  assert.equal(result.retrospective.findings.length, 1);
+  assert.equal(result.retrospective.findings[0].action.target, path.join(root, 'AGENTS.md'));
 });
 
 test('reviewSession routes path scoped knowledge to nearest directory AGENTS file', async () => {
@@ -380,9 +408,9 @@ test('reviewSession routes path scoped knowledge to nearest directory AGENTS fil
 
   const result = await reviewSession({ root, sessionId: 'sess_path_route' });
 
-  assert.equal(result.suggestions.length, 1);
-  assert.equal(result.suggestions[0].target, path.join(root, 'src', 'viewer', 'AGENTS.md'));
-  assert.match(result.suggestions[0].target_reason, /nearest existing AGENTS\.md/);
+  assert.equal(result.retrospective.findings.length, 1);
+  assert.equal(result.retrospective.findings[0].action.target, path.join(root, 'src', 'viewer', 'AGENTS.md'));
+  assert.match(result.retrospective.findings[0].action.target_reason, /nearest existing AGENTS\.md/);
 });
 
 test('reviewSession proposes a missing scoped AGENTS file for path specific knowledge', async () => {
@@ -400,12 +428,12 @@ test('reviewSession proposes a missing scoped AGENTS file for path specific know
 
   const result = await reviewSession({ root, sessionId: 'sess_missing_route' });
 
-  assert.equal(result.suggestions.length, 1);
-  assert.equal(result.suggestions[0].target, path.join(root, 'packages', 'api', 'AGENTS.md'));
-  assert.match(result.suggestions[0].target_reason, /missing scoped AGENTS\.md/);
+  assert.equal(result.retrospective.findings.length, 1);
+  assert.equal(result.retrospective.findings[0].action.target, path.join(root, 'packages', 'api', 'AGENTS.md'));
+  assert.match(result.retrospective.findings[0].action.target_reason, /missing scoped AGENTS\.md/);
 });
 
-test('reviewSession uses configured AI provider to generate suggestions from session events', async () => {
+test('reviewSession uses configured AI provider to generate findings from session events', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-'));
   await fs.mkdir(path.join(root, '.bypass'), { recursive: true });
   const requests = [];
@@ -465,10 +493,10 @@ test('reviewSession uses configured AI provider to generate suggestions from ses
     assert.equal(requests[0].temperature, 0);
     assert.equal(requests[0].response_format.type, 'json_object');
     assert.equal(requests[0].headers.authorization, 'Bearer test-api-key');
-    assert.equal(result.suggestions.length, 1);
-    assert.equal(result.suggestions[0].id, 'sug_ai');
-    assert.equal(result.suggestions[0].target, path.join(root, 'packages', 'api', 'AGENTS.md'));
-    assert.equal(result.suggestions[0].proposed_text, 'Project convention: prefer contract tests for API changes.');
+    assert.equal(result.retrospective.findings.length, 1);
+    assert.equal(result.retrospective.findings[0].id, 'sug_ai');
+    assert.equal(result.retrospective.findings[0].action.target, path.join(root, 'packages', 'api', 'AGENTS.md'));
+    assert.equal(result.retrospective.findings[0].action.proposed_text, 'Project convention: prefer contract tests for API changes.');
   } finally {
     await server.close();
   }
@@ -504,8 +532,8 @@ test('reviewSession falls back to rules when AI provider returns invalid JSON', 
 
     const result = await reviewSession({ root, sessionId: 'sess_ai_fallback' });
 
-    assert.equal(result.suggestions.length, 1);
-    assert.equal(result.suggestions[0].proposed_text, 'Project convention: keep AI review fallback deterministic.');
+    assert.equal(result.retrospective.findings.length, 1);
+    assert.equal(result.retrospective.findings[0].action.proposed_text, 'Project convention: keep AI review fallback deterministic.');
   } finally {
     await server.close();
   }
@@ -528,7 +556,7 @@ test('reviewSession ignores project_convention signals without actionable text',
 
   const result = await reviewSession({ root, sessionId: 'sess_weak_signal' });
 
-  assert.deepEqual(result.suggestions, []);
+  assert.deepEqual(result.retrospective.findings, []);
 });
 
 test('reviewSession deduplicates repeated convention suggestions', async () => {
@@ -554,8 +582,8 @@ test('reviewSession deduplicates repeated convention suggestions', async () => {
 
   const result = await reviewSession({ root, sessionId: 'sess_dupes' });
 
-  assert.equal(result.suggestions.length, 1);
-  assert.equal(result.suggestions[0].proposed_text, 'Project convention: use node:test.');
+  assert.equal(result.retrospective.findings.length, 1);
+  assert.equal(result.retrospective.findings[0].action.proposed_text, 'Project convention: use node:test.');
 });
 
 async function writeRawEvent(root, sessionId, event) {

@@ -61,11 +61,12 @@ export function normalizeViewer(input) {
   };
 }
 
-export function shouldExposeViewer({ viewer, suggestionCount }) {
+export function shouldExposeViewer({ viewer, suggestionCount, actionCount }) {
   if (!viewer?.enabled || viewer.openMode === 'off') {
     return false;
   }
-  if (viewer.openOnlyWhenSuggestions && suggestionCount === 0) {
+  const visibleCount = Number.isInteger(actionCount) ? actionCount : suggestionCount;
+  if (viewer.openOnlyWhenSuggestions && visibleCount === 0) {
     return false;
   }
   return true;

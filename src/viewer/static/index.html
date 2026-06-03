@@ -178,18 +178,18 @@
 
     function renderRailStats() {
       const totalEvents = state.sessions.reduce((sum, item) => sum + item.event_count, 0);
-      const totalSuggestions = state.sessions.reduce((sum, item) => sum + item.suggestion_count, 0);
-      nodes.railStats.innerHTML = `<div class="rail-label">Current index</div>${rail("Sessions", state.sessions.length)}${rail("Hook events", totalEvents)}${rail("Suggestions", totalSuggestions)}${rail("Runtime", "web")}`;
+      const totalActions = state.sessions.reduce((sum, item) => sum + item.suggestion_count, 0);
+      nodes.railStats.innerHTML = `<div class="rail-label">Current index</div>${rail("Sessions", state.sessions.length)}${rail("Hook events", totalEvents)}${rail("Knowledge actions", totalActions)}${rail("Runtime", "web")}`;
     }
 
     function renderList() {
       const rows = filteredSessions();
-      nodes.listMetrics.innerHTML = [metric("sessions", rows.length), metric("events", rows.reduce((sum, item) => sum + item.event_count, 0)), metric("knowledge suggestions", rows.reduce((sum, item) => sum + item.suggestion_count, 0)), metric("signal types", new Set(rows.flatMap((item) => item.signals)).size), metric("failures", rows.reduce((sum, item) => sum + item.failure_count, 0))].join("");
+      nodes.listMetrics.innerHTML = [metric("sessions", rows.length), metric("events", rows.reduce((sum, item) => sum + item.event_count, 0)), metric("knowledge actions", rows.reduce((sum, item) => sum + item.suggestion_count, 0)), metric("findings", rows.reduce((sum, item) => sum + (item.finding_count || 0), 0)), metric("failures", rows.reduce((sum, item) => sum + item.failure_count, 0))].join("");
       if (!rows.length) {
         nodes.sessionRows.innerHTML = `<tr><td colspan="6"><div class="empty">没有匹配的 session。</div></td></tr>`;
         return;
       }
-      nodes.sessionRows.innerHTML = rows.map((session) => `<tr data-session="${escapeHtml(session.session_id)}"><td><div class="mono">${escapeHtml(session.session_id)}</div><div class="preview">${escapeHtml(session.prompt_preview)}</div></td><td><span class="mono">${escapeHtml(formatDate(session.created_at))}</span></td><td>${pill(session.runtime)}</td><td><div class="mono">${session.event_count} events</div><div class="muted">${session.failure_count} failure</div></td><td><div class="pill-row">${session.signals.length ? session.signals.map((item) => pill(item, item.includes("failure") ? "bad" : "warn")).join("") : pill("none")}</div></td><td>${pill(`${session.suggestion_count} suggestion${session.suggestion_count === 1 ? "" : "s"}`, session.suggestion_count > 0 ? "good" : "")}</td></tr>`).join("");
+      nodes.sessionRows.innerHTML = rows.map((session) => `<tr data-session="${escapeHtml(session.session_id)}"><td><div class="mono">${escapeHtml(session.session_id)}</div><div class="preview">${escapeHtml(session.prompt_preview)}</div></td><td><span class="mono">${escapeHtml(formatDate(session.created_at))}</span></td><td>${pill(session.runtime)}</td><td><div class="mono">${session.event_count} events</div><div class="muted">${session.failure_count} failure</div></td><td><div class="pill-row">${session.signals.length ? session.signals.map((item) => pill(item, item.includes("failure") ? "bad" : "warn")).join("") : pill("none")}</div></td><td>${pill(`${session.suggestion_count} action${session.suggestion_count === 1 ? "" : "s"}`, session.suggestion_count > 0 ? "good" : "")}</td></tr>`).join("");
     }
 
     function renderDetail() {
@@ -197,28 +197,30 @@
       if (!session) return;
       const events = session.events || [];
       const metadata = session.metadata || {};
-      const suggestions = session.suggestions?.suggestions || [];
+      const findings = session.retrospective?.retrospective?.findings || [];
+      const knowledgeActions = findings.length ? findings.filter((finding) => finding.action?.type === "update_knowledge") : session.suggestions?.suggestions || [];
       nodes.workspace.textContent = metadata.working_directory || nodes.workspace.textContent || "";
       if (!events.some((item) => item.id === state.selectedEventId)) state.selectedEventId = events[0]?.id || null;
       nodes.detailSubtitle.innerHTML = `<span class="mono">${escapeHtml(session.session_id)}</span>`;
       nodes.runtimePill.textContent = metadata.runtime || "unknown";
-      nodes.detailMetrics.innerHTML = [metric("events", events.length), metric("failures", events.filter((item) => item.status === "failure").length), metric("signals", new Set(events.flatMap((item) => item.signals || [])).size), metric("suggestions", suggestions.length), metric("malformed", session.malformedEventCount || 0)].join("");
+      nodes.detailMetrics.innerHTML = [metric("events", events.length), metric("failures", events.filter((item) => item.status === "failure").length), metric("signals", new Set(events.flatMap((item) => item.signals || [])).size), metric("findings", findings.length), metric("knowledge actions", knowledgeActions.length), metric("malformed", session.malformedEventCount || 0)].join("");
       nodes.metadataPanel.innerHTML = `<div class="meta-grid">${kv("session_id", metadata.session_id || session.session_id)}${kv("created_at", metadata.created_at)}${kv("runtime", metadata.runtime)}${kv("plugin_version", metadata.plugin_version)}${kv("working_directory", metadata.working_directory)}${kv("source", ".bypass/sessions")}</div><details><summary>查看 original_prompt</summary><pre>${escapeHtml(metadata.original_prompt || "")}</pre></details>`;
       nodes.timelineCount.textContent = `${events.length} captured`;
       nodes.timeline.innerHTML = events.length ? events.map((eventItem) => `<article class="event ${eventItem.id === state.selectedEventId ? "active" : ""}"><div class="event-time"><div>${escapeHtml(formatTime(eventItem.timestamp))}</div><div>${escapeHtml(eventItem.hook)}</div><div>${escapeHtml(eventItem.status)}</div></div><div><p class="event-summary">${escapeHtml(eventItem.summary)}</p><div class="pill-row">${pill(eventItem.tool)}${(eventItem.signals || []).map((item) => pill(item, item.includes("failure") ? "bad" : "warn")).join("")}${(eventItem.paths || []).length ? pill(`${eventItem.paths.length} path`) : ""}<button class="mini" data-event="${escapeHtml(eventItem.id)}">Inspect</button></div></div></article>`).join("") : `<div class="empty">这个 session 没有 event 记录。</div>`;
-      renderSuggestions(session);
+      renderActions(session);
       renderSelectedEvent(session);
       nodes.reviewerPanel.innerHTML = `<pre>${escapeHtml(session.reviewerLog || "No reviewer log captured.")}</pre>`;
     }
 
-    function renderSuggestions(session) {
-      const suggestions = session.suggestions?.suggestions || [];
-      nodes.suggestionCount.textContent = session.suggestions?.summary || "";
-      if (!suggestions.length) {
-        nodes.suggestionsPanel.innerHTML = `<div class="empty">本次任务没有可沉淀的知识建议。主 agent 可以直接结束，不需要打断用户确认。</div>`;
+    function renderActions(session) {
+      const findings = session.retrospective?.retrospective?.findings || [];
+      const actions = findings.length ? findings.filter((finding) => finding.action?.type === "update_knowledge").map((finding) => ({ id: finding.id, kind: finding.category, confidence: finding.action.confidence, target: finding.action.target, proposed_text: finding.action.proposed_text, rationale: finding.action.rationale || finding.diagnosis, evidence: finding.evidence })) : session.suggestions?.suggestions || [];
+      nodes.suggestionCount.textContent = session.retrospective?.summary || session.suggestions?.summary || "";
+      if (!actions.length) {
+        nodes.suggestionsPanel.innerHTML = `<div class="empty">本次任务没有需要确认的知识更新动作。主 agent 可以直接结束，不需要打断用户确认。</div>`;
         return;
       }
-      nodes.suggestionsPanel.innerHTML = suggestions.map((suggestion) => `<article class="suggestion"><div class="pill-row">${pill(suggestion.kind, "good")}${pill(suggestion.confidence)}${pill(suggestion.id)}</div><h3>${escapeHtml(suggestion.proposed_text)}</h3><div class="focus">${escapeHtml(suggestion.target)}</div><p>${escapeHtml(suggestion.rationale)}</p><p class="mono">Evidence: ${escapeHtml((suggestion.evidence || []).join(", "))}</p></article>`).join("");
+      nodes.suggestionsPanel.innerHTML = actions.map((action) => `<article class="suggestion"><div class="pill-row">${pill(action.kind, "good")}${pill(action.confidence)}${pill(action.id)}</div><h3>${escapeHtml(action.proposed_text)}</h3><div class="focus">${escapeHtml(action.target)}</div><p>${escapeHtml(action.rationale)}</p><p class="mono">Evidence: ${escapeHtml((action.evidence || []).join(", "))}</p></article>`).join("");
     }
 
     function renderSelectedEvent(session) {

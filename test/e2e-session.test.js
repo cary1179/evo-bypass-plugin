@@ -26,7 +26,8 @@ test('full bypass flow records, reviews, requires approval, and applies approved
   });
 
   const review = await reviewSession({ root, sessionId });
-  assert.equal(review.suggestions.length, 1);
+  assert.equal(review.retrospective.findings.length, 1);
+  assert.equal(review.retrospective.findings[0].action.type, 'update_knowledge');
 
   await assert.rejects(
     applyApprovedUpdate({ root, sessionId }),
@@ -35,7 +36,7 @@ test('full bypass flow records, reviews, requires approval, and applies approved
 
   await fs.writeFile(paths.approvalPath, JSON.stringify({
     approved_at: new Date().toISOString(),
-    approved_suggestion_ids: [review.suggestions[0].id],
+    approved_suggestion_ids: [review.retrospective.findings[0].id],
     approval_text: 'confirmed by user'
   }));
 

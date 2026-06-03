@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { normalizeSuggestion } from './core/event-schema.js';
+import { normalizeRetrospectiveResult } from './core/retrospective-schema.js';
 
 const repoRoot = fileURLToPath(new URL('..', import.meta.url));
 const reviewerPromptPath = path.join(repoRoot, 'prompts', 'reviewer.md');
@@ -49,7 +49,7 @@ export async function reviewWithAiProvider({ root, sessionId, events, candidates
   }
 
   const parsed = JSON.parse(content);
-  return validateAiSuggestions({ root, events, suggestions: parsed.suggestions });
+  return validateAiRetrospective({ root, sessionId, events, candidates, parsed });
 }
 
 async function buildReviewerPayload({ root, sessionId, events, candidates }) {
@@ -113,53 +113,64 @@ async function fileExists(filePath) {
   }
 }
 
-function validateAiSuggestions({ root, events, suggestions }) {
-  if (!Array.isArray(suggestions)) {
-    throw new Error('AI reviewer response must include suggestions array');
+function validateAiRetrospective({ root, sessionId, events, candidates, parsed }) {
+  if (!Array.isArray(parsed?.retrospective?.findings)) {
+    throw new Error('AI reviewer response must include retrospective.findings array');
   }
 
   const eventIds = new Set(events.map((event) => event.id));
-  return suggestions
-    .map((suggestion) => normalizeAiSuggestion({ root, eventIds, suggestion }))
+  const targetByCandidate = new Map(candidates.map((candidate) => [path.resolve(candidate.target), candidate.target]));
+  const normalizedFindings = parsed.retrospective.findings
+    .map((finding) => normalizeAiFinding({ root, eventIds, targetByCandidate, finding }))
     .filter(Boolean);
+
+  return normalizeRetrospectiveResult({
+    sessionId,
+    summary: parsed?.summary,
+    outcome: parsed?.retrospective?.outcome,
+    quality: parsed?.retrospective?.quality,
+    findings: normalizedFindings
+  });
 }
 
-function normalizeAiSuggestion({ root, eventIds, suggestion }) {
-  if (!suggestion || typeof suggestion !== 'object') {
+function normalizeAiFinding({ root, eventIds, targetByCandidate, finding }) {
+  if (!finding || typeof finding !== 'object') {
     return undefined;
   }
 
-  const evidence = Array.isArray(suggestion.evidence)
-    ? suggestion.evidence.filter((id) => eventIds.has(id))
+  const evidence = Array.isArray(finding.evidence)
+    ? finding.evidence.filter((id) => eventIds.has(id))
     : [];
   if (evidence.length === 0) {
     return undefined;
   }
 
-  const target = safeTarget({ root, target: suggestion.target });
-  if (!target || typeof suggestion.proposed_text !== 'string' || suggestion.proposed_text.trim() === '') {
-    return undefined;
+  const action = { ...(finding.action || {}) };
+  if (action.type === 'update_knowledge') {
+    const target = safeCandidateTarget({ root, target: action.target, targetByCandidate });
+    if (!target) {
+      return undefined;
+    }
+    action.target = target;
   }
 
-  return normalizeSuggestion({
-    ...suggestion,
-    target,
-    evidence
-  }, target);
+  return { ...finding, evidence, action };
 }
 
-function safeTarget({ root, target }) {
+function safeCandidateTarget({ root, target, targetByCandidate }) {
   if (typeof target !== 'string' || target.trim() === '') {
     return '';
   }
 
   const rootPath = path.resolve(root);
-  const targetPath = path.resolve(rootPath, target);
+  const targetPath = path.isAbsolute(target)
+    ? path.resolve(target)
+    : path.resolve(rootPath, target);
   const relative = path.relative(rootPath, targetPath);
   if (relative === '' || relative.startsWith('..') || path.isAbsolute(relative)) {
     return '';
   }
-  return targetPath;
+  return targetByCandidate.get(targetPath) || '';
 }
 
 async function fetchWithTimeout(url, options, timeoutMs) {

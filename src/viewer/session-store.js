@@ -47,12 +47,22 @@ export async function getSessionDetail({ root = process.cwd(), sessionId }) {
     summary: 'No suggestions file found for this session.',
     suggestions: []
   });
+  const retrospective = await readJson(paths.retrospectivePath, {
+    session_id: sessionId,
+    summary: 'No retrospective file found for this session.',
+    retrospective: {
+      outcome: 'unknown',
+      quality: 'smooth',
+      findings: []
+    }
+  });
   const reviewerLog = await readText(paths.reviewerLogPath, '');
 
   return {
     session_id: sessionId,
     metadata,
     events,
+    retrospective,
     suggestions,
     reviewerLog,
     malformedEventCount: malformedCount
@@ -61,7 +71,8 @@ export async function getSessionDetail({ root = process.cwd(), sessionId }) {
 
 function toSummary(detail) {
   const events = Array.isArray(detail.events) ? detail.events : [];
-  const suggestions = Array.isArray(detail.suggestions?.suggestions) ? detail.suggestions.suggestions : [];
+  const findings = retrospectiveFindings(detail);
+  const knowledgeActions = knowledgeActionFindings(detail);
   return {
     session_id: detail.session_id,
     created_at: detail.metadata?.created_at || '',
@@ -69,11 +80,34 @@ function toSummary(detail) {
     event_count: events.length,
     failure_count: events.filter((event) => event.status === 'failure').length,
     signals: [...new Set(events.flatMap((event) => Array.isArray(event.signals) ? event.signals : []))],
-    suggestion_count: suggestions.length,
-    has_suggestion_report: typeof detail.suggestions?.suggestion_report_path === 'string' && detail.suggestions.suggestion_report_path.length > 0,
+    finding_count: findings.length,
+    suggestion_count: knowledgeActions.length,
+    has_suggestion_report: reportPath(detail).length > 0,
     working_directory: detail.metadata?.working_directory || '',
     prompt_preview: preview(detail.metadata?.original_prompt || '')
   };
+}
+
+function retrospectiveFindings(detail) {
+  return Array.isArray(detail.retrospective?.retrospective?.findings)
+    ? detail.retrospective.retrospective.findings
+    : [];
+}
+
+function knowledgeActionFindings(detail) {
+  const findings = retrospectiveFindings(detail);
+  if (findings.length > 0) {
+    return findings.filter((finding) => finding.action?.type === 'update_knowledge');
+  }
+  return Array.isArray(detail.suggestions?.suggestions) ? detail.suggestions.suggestions : [];
+}
+
+function reportPath(detail) {
+  return typeof detail.retrospective?.retrospective_report_path === 'string' && detail.retrospective.retrospective_report_path.length > 0
+    ? detail.retrospective.retrospective_report_path
+    : typeof detail.suggestions?.suggestion_report_path === 'string'
+      ? detail.suggestions.suggestion_report_path
+      : '';
 }
 
 async function readJson(filePath, fallback) {

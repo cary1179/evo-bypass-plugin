@@ -133,7 +133,6 @@ test('mergeHookConfig migrates old Claude review hook that used CLAUDE_SESSION_I
             {
               type: 'command',
               command: 'node "/repo/scripts/review-session.js"',
-              asyncRewake: true,
             },
           ],
         },
@@ -145,7 +144,7 @@ test('mergeHookConfig migrates old Claude review hook that used CLAUDE_SESSION_I
 
   assert.equal(merged.hooks.Stop[0].hooks.length, 1);
   assert.equal(merged.hooks.Stop[0].hooks[0].command, 'node "/repo/scripts/review-session.js"');
-  assert.equal(merged.hooks.Stop[0].hooks[0].asyncRewake, true);
+  assert.equal(merged.hooks.Stop[0].hooks[0].asyncRewake, undefined);
 });
 
 test('installHooks uses Codex env target, replaces repo placeholder, and is idempotent', async () => {

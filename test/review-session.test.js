@@ -105,8 +105,10 @@ test('review-session CLI prints a report for an existing session', async () => {
   });
 
   assert.equal(result.status, 0);
+  const output = JSON.parse(result.stdout);
   const reportPath = path.join(bypassDir, 'retrospective', 'sess_cli.md');
-  assert.match(result.stdout, new RegExp(`请阅读 ${escapeRegExp(reportPath)} 文件`));
+  assert.equal(output.decision, 'block');
+  assert.match(output.reason, new RegExp(`请阅读 ${escapeRegExp(reportPath)} 文件`));
   const report = await fs.readFile(reportPath, 'utf8');
   assert.match(report, /Project convention: keep report details in markdown\./);
 });
@@ -135,10 +137,58 @@ test('review-session CLI resolves Claude session id from stdin payload without e
   });
 
   assert.equal(result.status, 0);
+  const output = JSON.parse(result.stdout);
   const reportPath = path.join(bypassDir, 'retrospective', 'sess_claude_stdin.md');
-  assert.match(result.stdout, new RegExp(`请阅读 ${escapeRegExp(reportPath)} 文件`));
+  assert.equal(output.decision, 'block');
+  assert.match(output.reason, new RegExp(`请阅读 ${escapeRegExp(reportPath)} 文件`));
   const report = await fs.readFile(reportPath, 'utf8');
   assert.match(report, /Project convention: resolve Claude stop session from stdin\./);
+});
+
+test('review-session CLI emits Claude systemMessage JSON for clean retrospective', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-'));
+  const bypassDir = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-home-'));
+  await collectEvent({ root, payload: { hook_event_name: 'UserPromptSubmit', session_id: 'sess_claude_empty', prompt: 'hello' } });
+
+  const result = spawnSync(process.execPath, [reviewCliPath], {
+    cwd: root,
+    input: JSON.stringify({ session_id: 'sess_claude_empty', cwd: root, hook_event_name: 'Stop' }),
+    env: { ...process.env, EVO_BYPASS_DIR: bypassDir },
+    encoding: 'utf8'
+  });
+
+  assert.equal(result.status, 0);
+  const output = JSON.parse(result.stdout);
+  assert.equal(output.decision, undefined);
+  assert.equal(output.suppressOutput, false);
+  assert.match(output.systemMessage, /本次任务复盘无待处理动作/);
+});
+
+test('review-session CLI allows Claude stop when knowledge block has already rewoken once', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-'));
+  const bypassDir = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-home-'));
+  await collectEvent({ root, payload: { hook_event_name: 'UserPromptSubmit', session_id: 'sess_claude_active', prompt: 'hello' } });
+  await collectEvent({
+    root,
+    payload: {
+      hook_event_name: 'PostToolUse',
+      session_id: 'sess_claude_active',
+      tool_name: 'Bash',
+      tool_response: { exit_code: 0, output: 'Project convention: avoid repeated stop blocking.' }
+    }
+  });
+
+  const result = spawnSync(process.execPath, [reviewCliPath], {
+    cwd: root,
+    input: JSON.stringify({ session_id: 'sess_claude_active', cwd: root, hook_event_name: 'Stop', stop_hook_active: true }),
+    env: { ...process.env, EVO_BYPASS_DIR: bypassDir },
+    encoding: 'utf8'
+  });
+
+  assert.equal(result.status, 0);
+  const output = JSON.parse(result.stdout);
+  assert.equal(output.decision, undefined);
+  assert.match(output.systemMessage, /需要确认的知识更新/);
 });
 
 test('review-session CLI prints valid Codex stop hook JSON output', async () => {

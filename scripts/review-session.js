@@ -55,7 +55,7 @@ try {
       systemMessage: report
     }, null, 2));
   } else {
-    console.log(report);
+    console.log(JSON.stringify(formatClaudeHookOutput({ report, knowledgeUpdates, payload }), null, 2));
   }
 } catch (error) {
   await appendStopHookLog({
@@ -104,6 +104,22 @@ function hookRuntime(payload) {
     return process.argv[runtimeArgIndex + 1];
   }
   return payload.runtime || 'claude';
+}
+
+function formatClaudeHookOutput({ report, knowledgeUpdates, payload }) {
+  if (knowledgeUpdates > 0 && !payload.stop_hook_active) {
+    return {
+      decision: 'block',
+      reason: report,
+      suppressOutput: false,
+      systemMessage: report
+    };
+  }
+
+  return {
+    suppressOutput: false,
+    systemMessage: report
+  };
 }
 
 async function appendStopHookLog({ root, ...entry }) {

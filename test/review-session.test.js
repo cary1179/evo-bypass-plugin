@@ -849,6 +849,46 @@ test('reviewSession ignores project_convention signals without actionable text',
   assert.deepEqual(result.retrospective.findings, []);
 });
 
+test('reviewSession extracts reusable Chinese project convention rules', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-'));
+  await collectEvent({
+    root,
+    payload: {
+      hook_event_name: 'PostToolUse',
+      session_id: 'sess_chinese_rule',
+      tool_name: 'Bash',
+      tool_response: { exit_code: 0, output: '项目约定：以后本地 rules reviewer 需要支持中文规则句。' }
+    }
+  });
+
+  const result = await reviewSession({ root, sessionId: 'sess_chinese_rule' });
+
+  assert.equal(result.suggestions.length, 1);
+  assert.equal(result.suggestions[0].kind, 'project_convention');
+  assert.equal(result.suggestions[0].proposed_text, 'Project convention: 以后本地 rules reviewer 需要支持中文规则句。');
+});
+
+test('reviewSession treats Chinese imperative convention sentences as reusable rules', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-'));
+  await writeRawEvent(root, 'sess_chinese_imperative', {
+    id: 'evt_chinese_imperative',
+    session_id: 'sess_chinese_imperative',
+    timestamp: new Date().toISOString(),
+    hook: 'PostToolUse',
+    tool: 'Bash',
+    summary: 'Bash completed PostToolUse',
+    paths: [],
+    status: 'success',
+    signals: ['project_convention'],
+    evidence: ['以后本地 rules reviewer 优先从中文里的“需要/不要/保持/优先”句式提取规则。']
+  });
+
+  const result = await reviewSession({ root, sessionId: 'sess_chinese_imperative' });
+
+  assert.equal(result.suggestions.length, 1);
+  assert.equal(result.suggestions[0].proposed_text, 'Project convention: 以后本地 rules reviewer 优先从中文里的“需要/不要/保持/优先”句式提取规则。');
+});
+
 test('reviewSession deduplicates repeated convention suggestions', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-'));
   await collectEvent({

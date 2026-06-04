@@ -190,6 +190,40 @@ test('collectEvent prioritizes failure hooks over zero exit codes', async () => 
   assert.ok(event.signals.includes('test_failure'));
 });
 
+test('collectEvent detects explicit Chinese project convention evidence', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-'));
+  const result = await collectEvent({
+    root,
+    payload: {
+      hook_event_name: 'PostToolUse',
+      session_id: 'sess_chinese_convention',
+      tool_name: 'Bash',
+      tool_response: { exit_code: 0, output: '项目约定：以后本地 reviewer 优先支持中文规则句。' }
+    }
+  });
+
+  const lines = (await fs.readFile(result.paths.eventsPath, 'utf8')).trim().split('\n');
+  const event = JSON.parse(lines.at(-1));
+  assert.ok(event.signals.includes('project_convention'));
+});
+
+test('collectEvent does not mark weak keyword mentions as project conventions', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-'));
+  const result = await collectEvent({
+    root,
+    payload: {
+      hook_event_name: 'PostToolUse',
+      session_id: 'sess_weak_keyword',
+      tool_name: 'Bash',
+      tool_response: { exit_code: 0, output: 'The docs mention convention and prefer in a paragraph, but no rule is stated.' }
+    }
+  });
+
+  const lines = (await fs.readFile(result.paths.eventsPath, 'utf8')).trim().split('\n');
+  const event = JSON.parse(lines.at(-1));
+  assert.equal(event.signals.includes('project_convention'), false);
+});
+
 test('collect-event CLI exits successfully for invalid JSON', () => {
   const result = spawnSync(process.execPath, ['scripts/collect-event.js'], {
     cwd: path.resolve(import.meta.dirname, '..'),

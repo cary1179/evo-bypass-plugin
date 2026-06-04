@@ -6,6 +6,7 @@ import { normalizeRetrospectiveResult, extractKnowledgeActions } from './core/re
 import { readBypassConfig } from './core/config.js';
 import { routeKnowledgeTarget } from './knowledge-routing.js';
 import { reviewWithAiProvider } from './ai-reviewer.js';
+import { extractReusableProjectConvention } from './project-convention.js';
 
 export async function reviewSession({ root = process.cwd(), sessionId, bypassDir = defaultBypassDir() }) {
   const paths = resolveSessionPaths({ root, sessionId });
@@ -174,8 +175,10 @@ function findingsForEvent(event, route) {
   const evidence = Array.isArray(event.evidence) ? event.evidence : [];
   const signals = Array.isArray(event.signals) ? event.signals : [];
   const text = `${event.summary}\n${evidence.join('\n')}`;
-  const knowledgeText = extractKnowledgeText(text);
-  if ((signals.includes('project_convention') || /project convention/i.test(text)) && knowledgeText) {
+  const knowledgeText = extractReusableProjectConvention(text);
+  const hasConventionCue = signals.includes('project_convention')
+    || /project convention|项目(?:约定|规范|规则)|项目中?的?规则/iu.test(text);
+  if (hasConventionCue && knowledgeText) {
     return [{
       id: `finding_${event.id}`,
       category: 'knowledge',
@@ -276,17 +279,4 @@ function legacySuggestionView(result) {
     suggestions: result.suggestions,
     suggestion_report_path: result.suggestion_report_path
   };
-}
-
-function extractKnowledgeText(text) {
-  const labeled = text.match(/Project convention:\s*(.+)/i);
-  if (labeled && labeled[1].trim()) {
-    return `Project convention: ${labeled[1].trim()}`;
-  }
-
-  const usefulSentence = text
-    .split(/\r?\n|(?<=[.!?])\s+/)
-    .map((sentence) => sentence.trim())
-    .find((sentence) => /^(always|avoid|do not|don't|keep|never|prefer|use)\b/i.test(sentence));
-  return usefulSentence ? `Project convention: ${usefulSentence}` : '';
 }

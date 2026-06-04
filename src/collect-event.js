@@ -2,6 +2,7 @@ import fs from 'node:fs/promises';
 import { resolveSessionPaths } from './core/session-paths.js';
 import { normalizeEvent } from './core/event-schema.js';
 import { normalizeHookPayload } from './adapters/hook-payload.js';
+import { hasReusableProjectConvention } from './project-convention.js';
 
 export async function collectEvent({ root = process.cwd(), payload }) {
   const normalized = normalizeHookPayload(payload, root);
@@ -71,14 +72,15 @@ function extractPaths(input) {
 
 function detectSignals({ command, output, status }) {
   const signals = [];
-  const text = `${command}\n${output}`.toLowerCase();
-  if (status === 'failure' && /\b(test|vitest|jest|pytest|node --test)\b/.test(text)) {
+  const text = `${command}\n${output}`;
+  const lowerText = text.toLowerCase();
+  if (status === 'failure' && /\b(test|vitest|jest|pytest|node --test)\b/.test(lowerText)) {
     signals.push('test_failure');
   }
-  if (/\b(npm|pnpm|yarn) (install|add)\b/.test(text)) {
+  if (/\b(npm|pnpm|yarn) (install|add)\b/.test(lowerText)) {
     signals.push('dependency_change');
   }
-  if (/\b(config|convention|preference|prefer)\b/.test(text)) {
+  if (hasReusableProjectConvention(text)) {
     signals.push('project_convention');
   }
   return signals;

@@ -150,6 +150,30 @@ test('mergeHookConfig migrates old Claude review hook to async enqueue hook', ()
   assert.equal(merged.hooks.Stop[0].hooks[0].asyncRewake, undefined);
 });
 
+test('hook templates install async service start and enqueue commands for Codex and Claude', async () => {
+  for (const runtime of ['codex', 'claude']) {
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), `evo-bypass-${runtime}-template-hooks-`));
+    const targetPath = path.join(tmpDir, 'hooks.json');
+
+    await installHooks({ runtime, repoRoot, targetPath });
+
+    const installed = JSON.parse(await fs.readFile(targetPath, 'utf8'));
+    const sessionStartCommand = `node "${repoRoot}/scripts/session-start-service.js" --runtime ${runtime}`;
+    const enqueueCommand = `node "${repoRoot}/scripts/enqueue-review-job.js" --runtime ${runtime}`;
+
+    assert.equal(countCommands(installed, sessionStartCommand), 1, `${runtime} SessionStart service hook`);
+    assert.equal(countCommands(installed, enqueueCommand), 1, `${runtime} Stop enqueue hook`);
+    assert.ok(
+      installed.hooks.SessionStart?.some((group) => group.hooks?.some((hook) => hook.command === sessionStartCommand)),
+      `${runtime} SessionStart should include service start command`,
+    );
+    assert.ok(
+      installed.hooks.Stop?.some((group) => group.hooks?.some((hook) => hook.command === enqueueCommand)),
+      `${runtime} Stop should include enqueue command`,
+    );
+  }
+});
+
 test('installHooks uses Codex env target, replaces repo placeholder, and is idempotent', async () => {
   const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-codex-hooks-'));
   const targetPath = path.join(tmpDir, 'nested', 'hooks.json');

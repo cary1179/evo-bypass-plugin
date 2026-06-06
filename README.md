@@ -33,19 +33,33 @@ The collector records summaries, paths, exit status, redacted evidence snippets,
   
 2. `PostToolUse` and `PostToolUseFailure` append redacted tool events.
   
-3. `Stop` runs the reviewer and writes `retrospective.json`.
+3. `SessionStart` makes sure the async local review service is available.
   
-4. It writes a Markdown report under the user-level bypass directory for every Stop review.
+4. `Stop` checks service health and enqueues a review job when the service is healthy.
   
-5. The reviewer tells the main agent to read that report and ask the user whether to apply specific `update_knowledge` actions.
+5. The service worker reviews the session in the background and writes `retrospective.json`.
   
-6. Only after approval, `scripts/apply-approved-update.js` writes approved entries.
+6. If the review contains `update_knowledge` actions, the Web UI opens for user editing and approval.
+  
+7. Only after approval, `scripts/apply-approved-update.js` writes approved entries.
   
 
 By default, approved updates are routed to the most relevant `AGENTS.md`.
+## Async Local Review Service
+Evo Bypass uses a local async service so the main agent session is not blocked by reviewer work.
+
+`SessionStart` checks the local `/api/health` endpoint. If health is already available, it returns immediately. If health is unavailable and the service is enabled, it requests a detached `evo-bypassd` start and still lets the main session continue.
+
+`Stop` is enqueue-only. It checks service health, posts a small review job when the service is healthy, and returns fire-and-forget JSON to the host agent. It does not run reviewer logic inline. If service health is unavailable at `Stop`, Evo Bypass skips enqueue, writes a hook log entry, and lets the main session finish.
+
+The service worker invokes the same local reviewer runtime as the session: Codex sessions use `codex exec`, and Claude Code sessions use `claude -p`. The async service path does not use an OpenAI-compatible provider.
+
+There is no deterministic rules reviewer or LLM fallback in the async path. Missing CLIs, timeouts, invalid JSON, validation errors, and other reviewer failures mark the job as `failed`.
+
+The browser UI opens only when a successful review produces `update_knowledge` actions. The user can edit proposed text in the UI and apply approved actions from there. Smooth reviews, advisory-only findings, skipped jobs, failed jobs, and unhealthy-service Stop hooks do not open the UI.
 ## Task Retrospectives
 
-Every Stop hook writes a task retrospective. The retrospective explains whether the task completed smoothly, which concrete failures or workflow issues appeared, and what action is recommended. Knowledge updates are represented as `update_knowledge` actions inside retrospective findings. Other actions, such as `create_skill`, `improve_code`, or `adjust_agent_usage`, are advisory and are not applied automatically.
+Every async review writes a task retrospective. The retrospective explains whether the task completed smoothly, which concrete failures or workflow issues appeared, and what action is recommended. Knowledge updates are represented as `update_knowledge` actions inside retrospective findings. Other actions, such as `create_skill`, `improve_code`, or `adjust_agent_usage`, are advisory and are not applied automatically.
 ## Knowledge Update Kinds
 Legacy knowledge suggestions use these kinds:
 
@@ -68,15 +82,15 @@ Each `update_knowledge` action includes evidence ids, confidence, a target knowl
 ## Stop Hook Reports
 ![Codex stop hook decision](./docs/assets/readme/stop-hook-decision.png)
 
-For every Stop review, Evo Bypass writes the detailed review report to:
+For every completed async review, Evo Bypass writes the detailed review report to:
 
 ```text
-~/.bypass/retrospective/<session-id>.md
+.bypass/sessions/<session-id>/retrospective.md
 ```
 
-The Stop hook response only includes the path to that Markdown file, so the hook output stays short while the main agent can still inspect the full details.
+The Stop hook response stays short because it only enqueues work. Review details are available through the local Web UI and the session artifact files after the worker finishes.
 
-For Codex, the Stop hook emits valid JSON. If `update_knowledge` actions exist, `continue` is `false` so the main agent does not silently finish before telling the user about the report. If there are no knowledge updates, `continue` is `true`.
+For Codex, the Stop hook emits valid JSON with `continue` set to `true` and `suppressOutput` set to `true`, so review work never blocks the main agent session.
 
 No-update sessions return:
 
@@ -129,6 +143,8 @@ It preserves existing hooks and skips Evo Bypass commands that are already insta
 
 For manual installation, use `.claude-plugin/plugin.json` as the plugin manifest and `hooks/claude-hooks.json` as the hook configuration. The Claude config covers:
 
+- `SessionStart`
+  
 - `UserPromptSubmit`
   
 - `PostToolUse`
@@ -138,7 +154,7 @@ For manual installation, use `.claude-plugin/plugin.json` as the plugin manifest
 - `Stop`
   
 
-The Claude `Stop` hook uses `asyncRewake` so the reviewer can send the knowledge update report back to the main agent after the task completes.
+The Claude `Stop` hook uses the same enqueue-only async service path as Codex.
 ## Applying Approved Updates
 After a task ends, inspect:
 

@@ -33,7 +33,10 @@ export async function applyApprovedUpdate({ root = process.cwd(), sessionId }) {
 
   const toApply = await Promise.all(updateActions
     .filter((suggestion) => approvedIds.has(suggestion.id))
-    .map((suggestion) => validateApprovedSuggestion({ root: rootPath, suggestion })));
+    .map((suggestion) => validateApprovedSuggestion({
+      root: rootPath,
+      suggestion: suggestionWithApprovedEdit({ suggestion, approval })
+    })));
 
   if (toApply.length === 0) {
     throw new Error('approved_suggestion_ids must match suggestions');
@@ -79,6 +82,12 @@ export function findingToSuggestion(finding) {
     proposed_text: finding.action.proposed_text,
     rationale: finding.action.rationale || finding.diagnosis
   };
+}
+
+function suggestionWithApprovedEdit({ suggestion, approval }) {
+  const edited = approval.edited_actions?.[suggestion.id]?.proposed_text;
+  if (edited === undefined) return suggestion;
+  return { ...suggestion, proposed_text: edited };
 }
 
 async function validateApprovedSuggestion({ root, suggestion }) {

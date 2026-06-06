@@ -23,6 +23,11 @@ export async function applyEditedApprovedUpdate({
   }
 
   const approvedIds = new Set(approvalRequest.approved_suggestion_ids);
+  const invalidEditIds = Object.keys(approvalRequest.edits).filter((id) => !approvedIds.has(id));
+  if (invalidEditIds.length > 0) {
+    throw new Error('edits must match approved suggestions');
+  }
+
   const toApply = await Promise.all(suggestions
     .filter((suggestion) => approvedIds.has(suggestion.id))
     .map(async (suggestion) => {
@@ -32,22 +37,16 @@ export async function applyEditedApprovedUpdate({
       if (typeof text !== 'string' || text.trim() === '') {
         throw new Error('approved update text must be non-empty');
       }
+      const target = await resolveSafeTarget(path.resolve(root), suggestion.target);
+      await assertWritableFileTarget(target);
       return {
         suggestion: { ...suggestion, proposed_text: text },
-        target: await resolveSafeTarget(path.resolve(root), suggestion.target)
+        target
       };
     }));
 
   if (toApply.length === 0) {
     throw new Error('approved_suggestion_ids must match suggestions');
-  }
-
-  const applied = [];
-  for (const { suggestion, target } of toApply) {
-    await fs.mkdir(path.dirname(target), { recursive: true });
-    const entry = formatKnowledgeEntry({ suggestion, sessionId });
-    await fs.appendFile(target, entry);
-    applied.push({ id: suggestion.id, target });
   }
 
   const approval = {
@@ -56,6 +55,14 @@ export async function applyEditedApprovedUpdate({
     edits: approvalRequest.edits
   };
   await fs.writeFile(paths.approvalPath, `${JSON.stringify(approval, null, 2)}\n`);
+
+  const applied = [];
+  for (const { suggestion, target } of toApply) {
+    await fs.mkdir(path.dirname(target), { recursive: true });
+    const entry = formatKnowledgeEntry({ suggestion, sessionId });
+    await fs.appendFile(target, entry);
+    applied.push({ id: suggestion.id, target });
+  }
 
   const patchText = applied.map((item) => `applied ${item.id} -> ${item.target}`).join('\n');
   await fs.writeFile(paths.appliedPatchPath, `${patchText}\n`);
@@ -87,11 +94,12 @@ function normalizeApprovalRequest({ approvedSuggestionIds, edits, approvals }) {
       if (!approval || typeof approval !== 'object' || typeof approval.id !== 'string') {
         throw new Error('approval must include approved_suggestion_ids');
       }
-      ids.push(approval.id);
+      const id = approval.id.trim();
+      ids.push(id);
       if (Object.hasOwn(approval, 'proposed_text')) {
-        normalizedEdits[approval.id] = approval.proposed_text;
+        normalizedEdits[id] = approval.proposed_text;
       } else if (Object.hasOwn(approval, 'text')) {
-        normalizedEdits[approval.id] = approval.text;
+        normalizedEdits[id] = approval.text;
       }
     }
   }
@@ -137,6 +145,18 @@ async function readJson(filePath, message) {
     if (error.code === 'ENOENT') {
       throw new Error(message);
     }
+    throw error;
+  }
+}
+
+async function assertWritableFileTarget(target) {
+  try {
+    const stat = await fs.lstat(target);
+    if (stat.isDirectory()) {
+      throw new Error('target must be a file path');
+    }
+  } catch (error) {
+    if (error.code === 'ENOENT') return;
     throw error;
   }
 }

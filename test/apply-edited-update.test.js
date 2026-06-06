@@ -46,6 +46,24 @@ test('applyEditedApprovedUpdate accepts approvals array text shape', async () =>
   assert.match(knowledge, /Edited via approvals array/);
 });
 
+test('applyEditedApprovedUpdate trims approvals array ids before mapping edited text', async () => {
+  const { root, paths } = await writeRetrospectiveFixture({ sessionId: 'sess_edited_approvals_trimmed' });
+
+  const result = await applyEditedApprovedUpdate({
+    root,
+    sessionId: 'sess_edited_approvals_trimmed',
+    approvals: [{ id: ' finding_1 ', text: 'EDITED from trimmed id.' }]
+  });
+  const knowledge = await fs.readFile(paths.defaultKnowledgePath, 'utf8');
+  const approval = JSON.parse(await fs.readFile(paths.approvalPath, 'utf8'));
+
+  assert.equal(result.applied_count, 1);
+  assert.match(knowledge, /EDITED from trimmed id/);
+  assert.equal(knowledge.includes('Original project convention'), false);
+  assert.deepEqual(approval.approved_suggestion_ids, ['finding_1']);
+  assert.deepEqual(approval.edits, { finding_1: 'EDITED from trimmed id.' });
+});
+
 test('applyEditedApprovedUpdate rejects empty edited text', async () => {
   const { root, paths } = await writeRetrospectiveFixture({ sessionId: 'sess_edited_empty' });
 
@@ -61,6 +79,50 @@ test('applyEditedApprovedUpdate rejects empty edited text', async () => {
   await assert.rejects(fs.stat(paths.defaultKnowledgePath), { code: 'ENOENT' });
 });
 
+test('applyEditedApprovedUpdate rejects unknown edit id', async () => {
+  const { root, paths } = await writeRetrospectiveFixture({ sessionId: 'sess_edited_unknown_edit' });
+
+  await assert.rejects(
+    applyEditedApprovedUpdate({
+      root,
+      sessionId: 'sess_edited_unknown_edit',
+      approved_suggestion_ids: ['finding_1'],
+      edits: {
+        finding_1: 'Edited text.',
+        finding_404: 'Unknown edited text.'
+      }
+    }),
+    /edits must match approved suggestions/
+  );
+  await assert.rejects(fs.stat(paths.defaultKnowledgePath), { code: 'ENOENT' });
+  await assert.rejects(fs.stat(paths.approvalPath), { code: 'ENOENT' });
+});
+
+test('applyEditedApprovedUpdate rejects edit id that was not approved', async () => {
+  const { root, paths } = await writeRetrospectiveFixture({
+    sessionId: 'sess_edited_unapproved_edit',
+    findings: [
+      findingFixture({ id: 'finding_1', target: 'AGENTS.md', proposedText: 'First original.' }),
+      findingFixture({ id: 'finding_2', target: 'SECOND.md', proposedText: 'Second original.' })
+    ]
+  });
+
+  await assert.rejects(
+    applyEditedApprovedUpdate({
+      root,
+      sessionId: 'sess_edited_unapproved_edit',
+      approved_suggestion_ids: ['finding_1'],
+      edits: {
+        finding_1: 'Edited approved text.',
+        finding_2: 'Edited but not selected.'
+      }
+    }),
+    /edits must match approved suggestions/
+  );
+  await assert.rejects(fs.stat(paths.defaultKnowledgePath), { code: 'ENOENT' });
+  await assert.rejects(fs.stat(paths.approvalPath), { code: 'ENOENT' });
+});
+
 test('applyEditedApprovedUpdate rejects unknown approved id', async () => {
   const { root, paths } = await writeRetrospectiveFixture({ sessionId: 'sess_edited_unknown' });
 
@@ -73,6 +135,38 @@ test('applyEditedApprovedUpdate rejects unknown approved id', async () => {
     /approved_suggestion_ids must match suggestions/
   );
   await assert.rejects(fs.stat(paths.defaultKnowledgePath), { code: 'ENOENT' });
+});
+
+test('applyEditedApprovedUpdate preflights all targets before writing without partial mutation', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-'));
+  const paths = resolveSessionPaths({ root, sessionId: 'sess_edited_no_partial' });
+  const directoryTarget = path.join(root, 'target-directory');
+  await fs.mkdir(directoryTarget, { recursive: true });
+  await writeRetrospectiveFixture({
+    root,
+    sessionId: 'sess_edited_no_partial',
+    findings: [
+      findingFixture({ id: 'finding_1', target: paths.defaultKnowledgePath, proposedText: 'Must not be partially written.' }),
+      findingFixture({ id: 'finding_2', target: directoryTarget, proposedText: 'Directory target is invalid.' })
+    ]
+  });
+
+  await assert.rejects(
+    applyEditedApprovedUpdate({
+      root,
+      sessionId: 'sess_edited_no_partial',
+      approved_suggestion_ids: ['finding_1', 'finding_2'],
+      edits: {
+        finding_1: 'Edited first text.',
+        finding_2: 'Edited second text.'
+      }
+    }),
+    /target must be a file path/
+  );
+
+  await assert.rejects(fs.stat(paths.defaultKnowledgePath), { code: 'ENOENT' });
+  await assert.rejects(fs.stat(paths.approvalPath), { code: 'ENOENT' });
+  await assert.rejects(fs.stat(paths.appliedPatchPath), { code: 'ENOENT' });
 });
 
 test('applyEditedApprovedUpdate rejects outside target escape', async () => {
@@ -127,7 +221,8 @@ async function writeRetrospectiveFixture({
   root,
   sessionId,
   target,
-  proposedText = 'Original project convention: use node:test.'
+  proposedText = 'Original project convention: use node:test.',
+  findings
 }) {
   root ??= await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-'));
   const paths = resolveSessionPaths({ root, sessionId });
@@ -138,22 +233,32 @@ async function writeRetrospectiveFixture({
     retrospective: {
       outcome: 'completed',
       quality: 'minor_issues',
-      findings: [{
-        id: 'finding_1',
-        category: 'knowledge',
-        severity: 'medium',
-        evidence: ['evt_1'],
-        diagnosis: 'Reusable convention.',
-        recommendation: 'Save it.',
-        action: {
-          type: 'update_knowledge',
-          confidence: 'high',
+      findings: findings || [
+        findingFixture({
+          id: 'finding_1',
           target: target || paths.defaultKnowledgePath,
-          proposed_text: proposedText,
-          rationale: 'Future sessions should remember this.'
-        }
-      }]
+          proposedText
+        })
+      ]
     }
   })}\n`);
   return { root, paths };
+}
+
+function findingFixture({ id, target, proposedText }) {
+  return {
+    id,
+    category: 'knowledge',
+    severity: 'medium',
+    evidence: ['evt_1'],
+    diagnosis: 'Reusable convention.',
+    recommendation: 'Save it.',
+    action: {
+      type: 'update_knowledge',
+      confidence: 'high',
+      target,
+      proposed_text: proposedText,
+      rationale: 'Future sessions should remember this.'
+    }
+  };
 }

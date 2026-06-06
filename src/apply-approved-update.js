@@ -31,9 +31,12 @@ export async function applyApprovedUpdate({ root = process.cwd(), sessionId }) {
     throw new Error('approved_suggestion_ids must match suggestions');
   }
 
-  const toApply = updateActions
+  const toApply = await Promise.all(updateActions
     .filter((suggestion) => approvedIds.has(suggestion.id))
-    .map((suggestion) => validateApprovedSuggestion({ root: rootPath, suggestion }));
+    .map((suggestion) => validateApprovedSuggestion({
+      root: rootPath,
+      suggestion: suggestionWithApprovedEdit({ suggestion, approval })
+    })));
 
   if (toApply.length === 0) {
     throw new Error('approved_suggestion_ids must match suggestions');
@@ -69,7 +72,7 @@ async function readApprovedActionCandidates(paths) {
   }
 }
 
-function findingToSuggestion(finding) {
+export function findingToSuggestion(finding) {
   return {
     id: finding.id,
     kind: 'retrospective_knowledge',
@@ -81,7 +84,13 @@ function findingToSuggestion(finding) {
   };
 }
 
-function validateApprovedSuggestion({ root, suggestion }) {
+function suggestionWithApprovedEdit({ suggestion, approval }) {
+  const edited = approval.edited_actions?.[suggestion.id]?.proposed_text;
+  if (edited === undefined) return suggestion;
+  return { ...suggestion, proposed_text: edited };
+}
+
+async function validateApprovedSuggestion({ root, suggestion }) {
   if (
     !suggestion ||
     typeof suggestion.id !== 'string' ||
@@ -94,19 +103,21 @@ function validateApprovedSuggestion({ root, suggestion }) {
   }
 
   try {
+    const target = await resolveSafeTarget(root, suggestion.target);
+    await assertWritableFileTarget(target);
     return {
       suggestion,
-      target: resolveSafeTarget(root, suggestion.target)
+      target
     };
   } catch (error) {
-    if (error.message === 'target must stay inside root') {
+    if (error.message === 'target must stay inside root' || error.message === 'target must be a file path') {
       throw error;
     }
     throw new Error('approved suggestion must include id, safe target, and proposed_text');
   }
 }
 
-function resolveSafeTarget(root, target) {
+export async function resolveSafeTarget(root, target) {
   if (typeof target !== 'string' || target.trim() === '') {
     throw new Error('target must stay inside root');
   }
@@ -117,7 +128,44 @@ function resolveSafeTarget(root, target) {
     throw new Error('target must stay inside root');
   }
 
+  const rootRealPath = await fs.realpath(rootPath);
+  const existingAncestor = await nearestExistingAncestor(targetPath, rootPath);
+  const ancestorRealPath = await fs.realpath(existingAncestor);
+  if (ancestorRealPath !== rootRealPath && !ancestorRealPath.startsWith(`${rootRealPath}${path.sep}`)) {
+    throw new Error('target must stay inside root');
+  }
+
   return targetPath;
+}
+
+export async function assertWritableFileTarget(target) {
+  try {
+    const stat = await fs.lstat(target);
+    if (stat.isDirectory()) {
+      throw new Error('target must be a file path');
+    }
+  } catch (error) {
+    if (error.code === 'ENOENT') return;
+    throw error;
+  }
+}
+
+async function nearestExistingAncestor(targetPath, rootPath) {
+  let current = targetPath;
+  while (current !== path.dirname(current)) {
+    try {
+      await fs.lstat(current);
+      return current;
+    } catch (error) {
+      if (error.code === 'ENOTDIR') {
+        throw new Error('target must be a file path');
+      }
+      if (error.code !== 'ENOENT') throw error;
+    }
+    if (current === rootPath) break;
+    current = path.dirname(current);
+  }
+  return rootPath;
 }
 
 async function readJson(filePath, message) {
@@ -131,7 +179,7 @@ async function readJson(filePath, message) {
   }
 }
 
-function formatKnowledgeEntry({ suggestion, sessionId }) {
+export function formatKnowledgeEntry({ suggestion, sessionId }) {
   return [
     '',
     `## ${suggestion.id}`,

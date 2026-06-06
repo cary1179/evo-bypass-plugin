@@ -4,7 +4,11 @@ import { normalizeEvent } from './core/event-schema.js';
 import { normalizeHookPayload } from './adapters/hook-payload.js';
 import { hasReusableProjectConvention } from './project-convention.js';
 
-export async function collectEvent({ root = process.cwd(), payload }) {
+export async function collectEvent({ root = process.cwd(), payload, env = process.env }) {
+  if (env.EVO_BYPASS_INTERNAL === '1') {
+    return { skipped: true, reason: 'internal_invocation' };
+  }
+
   const normalized = normalizeHookPayload(payload, root);
   const hook = normalized.hook;
   const sessionId = normalized.sessionId;

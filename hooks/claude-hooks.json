@@ -1,5 +1,16 @@
 {
   "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$EVO_BYPASS_HOME/scripts/session-start-service.js\" --runtime claude",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
     "UserPromptSubmit": [
       {
         "hooks": [
@@ -35,7 +46,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"$EVO_BYPASS_HOME/scripts/review-session.js\""
+            "command": "node \"$EVO_BYPASS_HOME/scripts/enqueue-review-job.js\" --runtime claude",
+            "timeout": 5
           }
         ]
       }

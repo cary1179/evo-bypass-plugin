@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { readBypassConfig, shouldExposeViewer } from '../src/core/config.js';
+import { readBypassConfig, normalizeService, shouldExposeViewer } from '../src/core/config.js';
+import { serviceUrl } from '../src/service/service-client.js';
 
 test('readBypassConfig returns safe defaults when config is missing', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-config-'));
@@ -23,6 +24,14 @@ test('readBypassConfig returns safe defaults when config is missing', async () =
     fallback: 'rules',
     timeoutMs: 120000,
     provider: undefined
+  });
+  assert.deepEqual(config.service, {
+    enabled: true,
+    host: '127.0.0.1',
+    port: 8765,
+    idleTimeoutMs: 1200000,
+    healthTimeoutMs: 250,
+    openBrowserOnKnowledge: true
   });
   assert.equal(config.configError, undefined);
 });
@@ -138,4 +147,69 @@ test('shouldExposeViewer supports action count while preserving suggestion count
     suggestionCount: 0,
     actionCount: 1
   }), true);
+});
+
+test('readBypassConfig normalizes async review service defaults', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-config-'));
+  const config = await readBypassConfig({ root });
+
+  assert.equal(config.service.enabled, true);
+  assert.equal(config.service.host, '127.0.0.1');
+  assert.equal(config.service.port, 8765);
+  assert.equal(config.service.idleTimeoutMs, 1200000);
+  assert.equal(config.service.healthTimeoutMs, 250);
+  assert.equal(config.service.openBrowserOnKnowledge, true);
+});
+
+test('readBypassConfig rejects remote async review service host', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-config-'));
+  await fs.mkdir(path.join(root, '.bypass'), { recursive: true });
+  await fs.writeFile(path.join(root, '.bypass', 'config.json'), `${JSON.stringify({
+    service: {
+      host: 'example.com',
+      port: 9999
+    }
+  })}\n`);
+
+  const config = await readBypassConfig({ root });
+
+  assert.equal(config.service.host, '127.0.0.1');
+  assert.equal(config.service.port, 9999);
+  assert.equal(serviceUrl(config.service), 'http://127.0.0.1:9999');
+});
+
+test('normalizeService accepts valid async review service settings', () => {
+  assert.deepEqual(normalizeService({
+    enabled: false,
+    host: 'localhost',
+    port: 9012,
+    idleTimeoutMs: 5000,
+    healthTimeoutMs: 100,
+    openBrowserOnKnowledge: false
+  }), {
+    enabled: false,
+    host: 'localhost',
+    port: 9012,
+    idleTimeoutMs: 5000,
+    healthTimeoutMs: 100,
+    openBrowserOnKnowledge: false
+  });
+});
+
+test('normalizeService rejects invalid async review service settings', () => {
+  assert.deepEqual(normalizeService({
+    enabled: 'yes',
+    host: '',
+    port: 70000,
+    idleTimeoutMs: 0,
+    healthTimeoutMs: -1,
+    openBrowserOnKnowledge: 'no'
+  }), {
+    enabled: true,
+    host: '127.0.0.1',
+    port: 8765,
+    idleTimeoutMs: 1200000,
+    healthTimeoutMs: 250,
+    openBrowserOnKnowledge: true
+  });
 });

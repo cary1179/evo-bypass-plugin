@@ -43,7 +43,8 @@ test('mergeHookConfig preserves existing hooks and appends incoming commands onc
           hooks: [
             {
               type: 'command',
-              command: 'node "/repo/scripts/review-session.js"',
+              command: 'node "/repo/scripts/enqueue-review-job.js" --runtime claude',
+              timeout: 5,
             },
           ],
         },
@@ -60,7 +61,7 @@ test('mergeHookConfig preserves existing hooks and appends incoming commands onc
   );
   assert.deepEqual(
     twice.hooks.Stop[0].hooks.map((hook) => hook.command),
-    ['node "/repo/scripts/review-session.js"'],
+    ['node "/repo/scripts/enqueue-review-job.js" --runtime claude'],
   );
   assert.deepEqual(existing.hooks.UserPromptSubmit[0].hooks, [
     {
@@ -78,8 +79,8 @@ test('mergeHookConfig refreshes existing Evo Bypass hook options when command ma
           hooks: [
             {
               type: 'command',
-              command: 'node "/repo/scripts/review-session.js" --runtime codex',
-              timeout: 5,
+              command: 'node "/repo/scripts/enqueue-review-job.js" --runtime codex',
+              timeout: 120,
             },
           ],
         },
@@ -93,8 +94,8 @@ test('mergeHookConfig refreshes existing Evo Bypass hook options when command ma
           hooks: [
             {
               type: 'command',
-              command: 'node "/repo/scripts/review-session.js" --runtime codex',
-              timeout: 120,
+              command: 'node "/repo/scripts/enqueue-review-job.js" --runtime codex',
+              timeout: 5,
             },
           ],
         },
@@ -105,11 +106,11 @@ test('mergeHookConfig refreshes existing Evo Bypass hook options when command ma
   const merged = mergeHookConfig(existing, incoming);
 
   assert.equal(merged.hooks.Stop[0].hooks.length, 1);
-  assert.equal(merged.hooks.Stop[0].hooks[0].timeout, 120);
-  assert.equal(existing.hooks.Stop[0].hooks[0].timeout, 5);
+  assert.equal(merged.hooks.Stop[0].hooks[0].timeout, 5);
+  assert.equal(existing.hooks.Stop[0].hooks[0].timeout, 120);
 });
 
-test('mergeHookConfig migrates old Claude review hook that used CLAUDE_SESSION_ID', () => {
+test('mergeHookConfig migrates old Claude review hook to async enqueue hook', () => {
   const existing = {
     hooks: {
       Stop: [
@@ -132,7 +133,8 @@ test('mergeHookConfig migrates old Claude review hook that used CLAUDE_SESSION_I
           hooks: [
             {
               type: 'command',
-              command: 'node "/repo/scripts/review-session.js"',
+              command: 'node "/repo/scripts/enqueue-review-job.js" --runtime claude',
+              timeout: 5,
             },
           ],
         },
@@ -143,8 +145,73 @@ test('mergeHookConfig migrates old Claude review hook that used CLAUDE_SESSION_I
   const merged = mergeHookConfig(existing, incoming);
 
   assert.equal(merged.hooks.Stop[0].hooks.length, 1);
-  assert.equal(merged.hooks.Stop[0].hooks[0].command, 'node "/repo/scripts/review-session.js"');
+  assert.equal(merged.hooks.Stop[0].hooks[0].command, 'node "/repo/scripts/enqueue-review-job.js" --runtime claude');
+  assert.equal(merged.hooks.Stop[0].hooks[0].timeout, 5);
   assert.equal(merged.hooks.Stop[0].hooks[0].asyncRewake, undefined);
+});
+
+test('mergeHookConfig migrates relative old Claude review hook to async enqueue hook', () => {
+  const existing = {
+    hooks: {
+      Stop: [
+        {
+          hooks: [
+            {
+              type: 'command',
+              command: 'node scripts/review-session.js "$CLAUDE_SESSION_ID"',
+              asyncRewake: true,
+            },
+          ],
+        },
+      ],
+    },
+  };
+  const incoming = {
+    hooks: {
+      Stop: [
+        {
+          hooks: [
+            {
+              type: 'command',
+              command: 'node "/repo/scripts/enqueue-review-job.js" --runtime claude',
+              timeout: 5,
+            },
+          ],
+        },
+      ],
+    },
+  };
+
+  const merged = mergeHookConfig(existing, incoming);
+
+  assert.equal(merged.hooks.Stop[0].hooks.length, 1);
+  assert.equal(merged.hooks.Stop[0].hooks[0].command, 'node "/repo/scripts/enqueue-review-job.js" --runtime claude');
+  assert.equal(merged.hooks.Stop[0].hooks[0].timeout, 5);
+  assert.equal(merged.hooks.Stop[0].hooks[0].asyncRewake, undefined);
+});
+
+test('hook templates install async service start and enqueue commands for Codex and Claude', async () => {
+  for (const runtime of ['codex', 'claude']) {
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), `evo-bypass-${runtime}-template-hooks-`));
+    const targetPath = path.join(tmpDir, 'hooks.json');
+
+    await installHooks({ runtime, repoRoot, targetPath });
+
+    const installed = JSON.parse(await fs.readFile(targetPath, 'utf8'));
+    const sessionStartCommand = `node "${repoRoot}/scripts/session-start-service.js" --runtime ${runtime}`;
+    const enqueueCommand = `node "${repoRoot}/scripts/enqueue-review-job.js" --runtime ${runtime}`;
+
+    assert.equal(countCommands(installed, sessionStartCommand), 1, `${runtime} SessionStart service hook`);
+    assert.equal(countCommands(installed, enqueueCommand), 1, `${runtime} Stop enqueue hook`);
+    assert.ok(
+      installed.hooks.SessionStart?.some((group) => group.hooks?.some((hook) => hook.command === sessionStartCommand)),
+      `${runtime} SessionStart should include service start command`,
+    );
+    assert.ok(
+      installed.hooks.Stop?.some((group) => group.hooks?.some((hook) => hook.command === enqueueCommand)),
+      `${runtime} Stop should include enqueue command`,
+    );
+  }
 });
 
 test('installHooks uses Codex env target, replaces repo placeholder, and is idempotent', async () => {
@@ -182,10 +249,14 @@ test('installHooks uses Codex env target, replaces repo placeholder, and is idem
     const installed = JSON.parse(await fs.readFile(targetPath, 'utf8'));
     const serialized = JSON.stringify(installed);
     const collectCommand = `node "${repoRoot}/scripts/collect-event.js" --runtime codex`;
+    const sessionStartCommand = `node "${repoRoot}/scripts/session-start-service.js" --runtime codex`;
+    const enqueueCommand = `node "${repoRoot}/scripts/enqueue-review-job.js" --runtime codex`;
 
     assert.match(serialized, new RegExp(escapeRegExp(repoRoot)));
     assert.doesNotMatch(serialized, /\$EVO_BYPASS_HOME/);
     assert.equal(countCommands(installed, collectCommand), 3);
+    assert.equal(countCommands(installed, sessionStartCommand), 1);
+    assert.equal(countCommands(installed, enqueueCommand), 1);
     assert.equal(countCommands(installed, 'node "/existing/codex-hook.js"'), 1);
     assert.equal((await fs.readFile(targetPath, 'utf8')).endsWith('\n'), true);
   } finally {
@@ -209,6 +280,7 @@ test('CLI uses Claude env target path and creates missing parent directory', asy
   const serialized = JSON.stringify(installed);
 
   assert.ok(installed.hooks.Stop);
+  assert.ok(installed.hooks.SessionStart);
   assert.match(serialized, new RegExp(escapeRegExp(repoRoot)));
   assert.doesNotMatch(serialized, /\$EVO_BYPASS_HOME/);
 });

@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { listSessions, getSessionDetail } from '../src/viewer/session-store.js';
 import { resolveSessionPaths } from '../src/core/session-paths.js';
+import { resolveServicePaths } from '../src/core/service-paths.js';
 
 test('listSessions returns compact summaries newest first', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-store-'));
@@ -54,6 +55,7 @@ test('listSessions returns compact summaries newest first', async () => {
       }
     }
   });
+  await writeJob(root, 'sess_old', { status: 'running' });
   await writeSession(root, 'sess_new', {
     metadata: {
       session_id: 'sess_new',
@@ -71,8 +73,10 @@ test('listSessions returns compact summaries newest first', async () => {
 
   assert.equal(result.root, root);
   assert.deepEqual(result.sessions.map((session) => session.session_id), ['sess_new', 'sess_old']);
+  assert.equal(result.sessions[0].job_status, 'none');
   assert.equal(result.sessions[1].event_count, 2);
   assert.equal(result.sessions[1].failure_count, 1);
+  assert.equal(result.sessions[1].job_status, 'running');
   assert.deepEqual(result.sessions[1].signals, ['project_convention', 'test_failure']);
   assert.equal(result.sessions[1].suggestion_count, 1);
   assert.equal(result.sessions[1].finding_count, 2);
@@ -120,6 +124,7 @@ test('getSessionDetail returns parsed artifacts and malformed event count', asyn
     },
     reviewerLog: 'Found 1 possible knowledge update(s).\n'
   });
+  await writeJob(root, 'sess_detail', { status: 'succeeded' });
 
   const detail = await getSessionDetail({ root, sessionId: 'sess_detail' });
 
@@ -130,6 +135,7 @@ test('getSessionDetail returns parsed artifacts and malformed event count', asyn
   assert.equal(detail.malformedEventCount, 1);
   assert.equal(detail.retrospective.retrospective.findings.length, 1);
   assert.equal(detail.suggestions.suggestions.length, 1);
+  assert.equal(detail.job.status, 'succeeded');
   assert.equal(detail.reviewerLog, 'Found 1 possible knowledge update(s).\n');
 });
 
@@ -157,6 +163,7 @@ test('session store degrades missing optional artifacts to empty values', async 
   const detail = await getSessionDetail({ root, sessionId: 'sess_sparse' });
 
   assert.equal(summary.event_count, 0);
+  assert.equal(summary.job_status, 'none');
   assert.equal(summary.suggestion_count, 0);
   assert.equal(summary.finding_count, 0);
   assert.deepEqual(detail.events, []);
@@ -175,6 +182,7 @@ test('session store degrades missing optional artifacts to empty values', async 
     suggestions: []
   });
   assert.equal(detail.reviewerLog, '');
+  assert.equal(detail.job, undefined);
 });
 
 function event({ id, sessionId, status, signals }) {
@@ -214,4 +222,23 @@ async function writeSession(root, sessionId, { metadata, events, rawEventLines =
     await fs.writeFile(paths.retrospectivePath, `${JSON.stringify(retrospective, null, 2)}\n`);
   }
   await fs.writeFile(paths.reviewerLogPath, reviewerLog);
+}
+
+async function writeJob(root, sessionId, overrides = {}) {
+  const paths = resolveServicePaths({ root });
+  await fs.mkdir(paths.jobsDir, { recursive: true });
+  await fs.writeFile(path.join(paths.jobsDir, `job_${sessionId}.json`), `${JSON.stringify({
+    id: `job_${sessionId}`,
+    session_id: sessionId,
+    runtime: 'codex',
+    root,
+    status: 'queued',
+    created_at: '2026-05-31T10:00:00.000Z',
+    started_at: '',
+    finished_at: '',
+    lease_expires_at: '',
+    lease_token: '',
+    error: '',
+    ...overrides
+  }, null, 2)}\n`);
 }

@@ -172,7 +172,14 @@ function commandIdentity(command) {
   if (typeof command !== 'string') {
     return '';
   }
-  return command.replace(/\s+["']?\$CLAUDE_SESSION_ID["']?$/, '');
+  const withoutLegacySessionArg = command.replace(/\s+["']?\$CLAUDE_SESSION_ID["']?$/, '');
+  const normalizedScript = withoutLegacySessionArg
+    .replace(/(["']?)(?:[^\s"']+\/)?scripts\/review-session\.js\1/g, 'scripts/enqueue-review-job.js')
+    .replace(/(["']?)(?:[^\s"']+\/)?scripts\/enqueue-review-job\.js\1/g, 'scripts/enqueue-review-job.js');
+  if (normalizedScript.includes('scripts/enqueue-review-job.js') && !/\s--runtime\s+/.test(normalizedScript)) {
+    return `${normalizedScript} --runtime claude`;
+  }
+  return normalizedScript;
 }
 
 function replaceCommandsHome(value, repoRoot) {

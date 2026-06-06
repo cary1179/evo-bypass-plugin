@@ -1,149 +1,300 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Evo Bypass Session Reviewer</title>
   <style>
     :root {
-      --bg: #f6f5f1;
-      --panel: #fff;
-      --panel-2: #fdfbf6;
-      --ink: #202527;
-      --muted: #667174;
-      --line: #d9d5c9;
-      --accent: #087a6f;
-      --accent-soft: #dff3ee;
-      --warn-soft: #f5e4c8;
-      --bad-soft: #f3d9d5;
+      --bg: #f4f6f4;
+      --rail: #e8ece7;
+      --panel: #ffffff;
+      --panel-soft: #f8faf8;
+      --ink: #1d2428;
+      --muted: #607078;
+      --line: #d3dbd2;
+      --accent: #116b5f;
+      --accent-2: #285f9b;
+      --good: #176b3a;
+      --warn: #98630c;
+      --bad: #a2362d;
+      --good-bg: #e6f4ea;
+      --warn-bg: #fff1d8;
+      --bad-bg: #fae7e4;
       --mono: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
-      --serif: Georgia, "Times New Roman", serif;
       --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     }
     * { box-sizing: border-box; }
-    body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--sans); }
-    .shell { min-height: 100vh; display: grid; grid-template-columns: 260px minmax(0, 1fr); }
-    aside { border-right: 1px solid var(--line); background: #efede5; padding: 24px 18px; }
-    main { min-width: 0; padding: 28px; }
-    h1 { margin: 0; font-family: var(--serif); font-size: clamp(32px, 4vw, 54px); line-height: 1; font-weight: 500; }
-    .brand { font-family: var(--serif); font-size: 24px; line-height: 1.1; }
-    .brand small, .subtitle, .muted { color: var(--muted); }
-    .brand small { display: block; margin-top: 8px; font-family: var(--sans); font-size: 12px; line-height: 1.45; }
-    .rail-section { border-top: 1px solid var(--line); margin-top: 18px; padding-top: 16px; }
-    .rail-label, th, .panel-title, .metric span, .kv span { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .07em; }
-    .rail-stat { display: grid; grid-template-columns: 1fr auto; gap: 10px; padding: 8px 0; font-size: 13px; }
-    .topbar { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin-bottom: 22px; }
-    .subtitle { margin: 10px 0 0; max-width: 760px; line-height: 1.55; font-size: 14px; }
-    .button { border: 1px solid #b9b6aa; color: var(--ink); background: transparent; min-height: 36px; padding: 7px 11px; border-radius: 6px; text-decoration: none; white-space: nowrap; }
-    .toolbar, .metrics { display: grid; gap: 10px; margin: 18px 0; }
-    .toolbar { grid-template-columns: minmax(220px, 1fr) 150px 170px; }
-    .metrics { grid-template-columns: repeat(5, minmax(0, 1fr)); }
-    input, select { border: 1px solid var(--line); background: var(--panel); min-height: 40px; padding: 8px 10px; border-radius: 6px; font: inherit; }
-    .metric, .panel, .table-wrap { border: 1px solid var(--line); background: var(--panel); }
-    .metric { min-height: 78px; padding: 12px; }
-    .metric strong { display: block; margin-top: 8px; font-family: var(--mono); font-size: 24px; }
-    table { width: 100%; border-collapse: collapse; table-layout: fixed; }
-    th, td { padding: 13px 12px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; font-size: 13px; }
-    th { background: var(--panel-2); }
-    tr[data-session] { cursor: pointer; }
-    tr[data-session]:hover td { background: #fbf9f0; }
-    .mono { font-family: var(--mono); font-size: 12px; overflow-wrap: anywhere; }
-    .preview { color: var(--muted); line-height: 1.45; margin-top: 4px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-    .pill-row { display: flex; flex-wrap: wrap; gap: 6px; }
-    .pill { display: inline-flex; align-items: center; min-height: 22px; padding: 2px 7px; border: 1px solid var(--line); background: #f7f6f0; border-radius: 999px; font-size: 11px; color: var(--muted); }
-    .good { background: var(--accent-soft); color: #075d55; border-color: #a9d7ce; }
-    .warn { background: var(--warn-soft); color: #75460b; border-color: #e0c089; }
-    .bad { background: var(--bad-soft); color: #74302c; border-color: #e0aaa5; }
-    .detail { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 16px; align-items: start; }
-    .panel { margin-bottom: 16px; }
-    .panel-head { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; padding: 13px 14px; border-bottom: 1px solid var(--line); background: var(--panel-2); }
-    .panel-body { padding: 14px; }
-    .meta-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
-    .kv strong { display: block; margin-top: 5px; font-size: 13px; overflow-wrap: anywhere; }
-    details { border-top: 1px solid var(--line); margin-top: 14px; padding-top: 10px; }
-    summary { cursor: pointer; color: var(--accent); font-size: 13px; }
-    pre { margin: 10px 0 0; padding: 12px; overflow: auto; max-height: 280px; background: #171b1c; color: #eef2ed; font-family: var(--mono); font-size: 11px; line-height: 1.55; border-radius: 4px; white-space: pre-wrap; overflow-wrap: anywhere; }
-    .timeline { display: grid; gap: 8px; }
-    .event { display: grid; grid-template-columns: 128px minmax(0, 1fr); gap: 12px; border: 1px solid var(--line); padding: 10px; background: #fff; }
-    .event.active { border-color: var(--accent); background: #f4fffb; }
-    .event-time { color: var(--muted); font-family: var(--mono); font-size: 11px; line-height: 1.5; }
-    .event-summary { margin: 0 0 8px; font-size: 13px; line-height: 1.45; overflow-wrap: anywhere; }
-    .mini { border: 1px solid var(--line); background: #f8f7f1; min-height: 26px; padding: 3px 8px; border-radius: 4px; font-size: 12px; cursor: pointer; }
-    .suggestion { border: 1px solid var(--line); padding: 12px; margin-bottom: 10px; background: #fff; }
-    .suggestion h3 { margin: 9px 0 8px; font-size: 15px; line-height: 1.35; }
-    .suggestion p { margin: 8px 0 0; color: var(--muted); font-size: 13px; line-height: 1.5; }
-    .focus { border-left: 3px solid var(--accent); background: #f0faf7; padding: 10px 11px; font-family: var(--mono); font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
-    .empty { color: var(--muted); padding: 18px; border: 1px dashed #b9b6aa; background: #fbfaf5; font-size: 13px; line-height: 1.55; }
+    body { margin: 0; min-height: 100vh; background: var(--bg); color: var(--ink); font-family: var(--sans); letter-spacing: 0; }
+    button, input, select, textarea { font: inherit; }
+    button { cursor: pointer; }
+    .app { min-height: 100vh; display: grid; grid-template-columns: 272px minmax(0, 1fr) minmax(336px, 28vw); }
+    .rail { border-right: 1px solid var(--line); background: var(--rail); padding: 18px 16px; position: sticky; top: 0; height: 100vh; overflow: auto; }
+    .main { min-width: 0; padding: 18px 20px 28px; }
+    .drawer { border-left: 1px solid var(--line); background: #fbfcfb; padding: 18px 16px; position: sticky; top: 0; height: 100vh; overflow: auto; }
+    .drawer.hidden { display: none; }
+    .app.no-drawer { grid-template-columns: 272px minmax(0, 1fr); }
+    .brand { display: grid; grid-template-columns: 36px 1fr; gap: 10px; align-items: center; margin-bottom: 18px; }
+    .mark { width: 36px; height: 36px; display: grid; place-items: center; border-radius: 8px; background: var(--ink); color: white; font-weight: 700; }
+    .brand strong { display: block; font-size: 15px; }
+    .brand span, .muted { color: var(--muted); }
+    .brand span { display: block; margin-top: 2px; font-size: 12px; line-height: 1.35; }
+    .section { border-top: 1px solid var(--line); margin-top: 14px; padding-top: 14px; }
+    .label, th, .panel-title, .metric span, .field span { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .07em; }
+    .workspace { min-height: 34px; padding: 8px; border: 1px solid var(--line); background: rgba(255,255,255,.52); border-radius: 6px; overflow-wrap: anywhere; }
+    .rail-stat { display: grid; grid-template-columns: 1fr auto; gap: 10px; padding: 7px 0; font-size: 13px; }
+    .rail-stat strong { font-family: var(--mono); }
+    .status-line { display: grid; gap: 8px; }
+    .status-box { border: 1px solid var(--line); background: rgba(255,255,255,.62); border-radius: 7px; padding: 10px; }
+    .status-box strong { display: block; font-size: 13px; overflow-wrap: anywhere; }
+    .status-box span { display: block; margin-top: 4px; color: var(--muted); font-family: var(--mono); font-size: 11px; overflow-wrap: anywhere; }
+    .topbar { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; min-height: 52px; margin-bottom: 14px; }
+    h1 { margin: 0; font-size: 24px; line-height: 1.12; font-weight: 680; }
+    h2, h3 { margin: 0; }
+    .subtitle { margin: 6px 0 0; color: var(--muted); font-size: 13px; line-height: 1.45; max-width: 860px; }
+    .toolbar { display: grid; grid-template-columns: minmax(220px, 1fr) 142px 150px 142px; gap: 8px; margin-bottom: 12px; }
+    input, select, textarea { border: 1px solid var(--line); background: white; color: var(--ink); border-radius: 6px; }
+    input, select { min-height: 38px; padding: 8px 10px; }
+    textarea { width: 100%; min-height: 138px; resize: vertical; padding: 10px; line-height: 1.45; }
+    .btn { min-height: 36px; border: 1px solid #b8c2b7; background: white; color: var(--ink); border-radius: 6px; display: inline-flex; align-items: center; justify-content: center; gap: 7px; padding: 7px 11px; text-decoration: none; white-space: nowrap; }
+    .btn.primary { border-color: var(--accent); background: var(--accent); color: white; }
+    .btn:disabled { cursor: not-allowed; opacity: .58; }
+    .icon { width: 34px; padding: 0; }
+    .session-link { display: block; color: inherit; text-decoration: none; border-radius: 5px; }
+    .session-link:focus-visible { outline: 3px solid rgba(40, 95, 155, .28); outline-offset: 3px; }
+    .metrics { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px; margin-bottom: 12px; }
+    .metric { border: 1px solid var(--line); background: var(--panel); border-radius: 7px; min-height: 70px; padding: 10px; }
+    .metric strong { display: block; margin-top: 7px; font-family: var(--mono); font-size: 20px; overflow-wrap: anywhere; }
     .route { display: none; }
     .route.active { display: block; }
-    @media (max-width: 980px) {
-      .shell, .toolbar, .metrics, .detail, .meta-grid, .event { grid-template-columns: 1fr; }
-      aside { border-right: 0; border-bottom: 1px solid var(--line); }
+    .table-wrap, .panel { border: 1px solid var(--line); background: var(--panel); border-radius: 7px; overflow: hidden; }
+    table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+    th, td { padding: 11px 10px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; font-size: 13px; }
+    th { background: var(--panel-soft); }
+    tr[data-session] { cursor: pointer; }
+    tr[data-session]:hover td, tr[data-session].selected td { background: #eef7f2; }
+    .detail-grid { display: grid; grid-template-columns: minmax(0, 1fr) 330px; gap: 12px; align-items: start; }
+    .panel { margin-bottom: 12px; }
+    .panel-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 12px; border-bottom: 1px solid var(--line); background: var(--panel-soft); }
+    .panel-body { padding: 12px; }
+    .meta-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+    .field strong { display: block; margin-top: 4px; font-size: 12px; overflow-wrap: anywhere; }
+    .timeline { display: grid; gap: 8px; }
+    .event { display: grid; grid-template-columns: 122px minmax(0, 1fr); gap: 10px; border: 1px solid var(--line); border-radius: 6px; padding: 10px; background: white; }
+    .event.active { border-color: var(--accent); background: #f1faf6; }
+    .event-time { color: var(--muted); font-family: var(--mono); font-size: 11px; line-height: 1.5; }
+    .event-summary { margin: 0 0 8px; line-height: 1.42; font-size: 13px; overflow-wrap: anywhere; }
+    .action-list { display: grid; gap: 9px; }
+    .action-card { border: 1px solid var(--line); border-radius: 7px; background: white; padding: 10px; }
+    .action-card.focused { border-color: var(--accent-2); box-shadow: 0 0 0 3px rgba(40, 95, 155, .12); }
+    .action-check { display: grid; grid-template-columns: 22px 1fr; gap: 9px; align-items: start; }
+    .action-check input { width: 16px; height: 16px; min-height: 0; margin-top: 2px; }
+    .action-title { font-size: 13px; line-height: 1.4; overflow-wrap: anywhere; }
+    .action-target { margin-top: 8px; padding: 8px; background: #f3f6f8; border: 1px solid #d7e0e4; border-radius: 5px; overflow-wrap: anywhere; }
+    .drawer-actions { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center; margin-top: 12px; }
+    .result { margin-top: 10px; padding: 9px; border-radius: 6px; border: 1px solid var(--line); background: white; color: var(--muted); font-size: 12px; line-height: 1.45; overflow-wrap: anywhere; }
+    .result.good { color: var(--good); background: var(--good-bg); border-color: #b8dfc2; }
+    .result.bad { color: var(--bad); background: var(--bad-bg); border-color: #efb9b2; }
+    .pill-row { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; }
+    .pill { display: inline-flex; align-items: center; min-height: 22px; padding: 2px 7px; border: 1px solid var(--line); border-radius: 999px; background: #f6f8f6; color: var(--muted); font-size: 11px; max-width: 100%; overflow-wrap: anywhere; }
+    .pill.good { color: var(--good); background: var(--good-bg); border-color: #b8dfc2; }
+    .pill.warn { color: var(--warn); background: var(--warn-bg); border-color: #efcf92; }
+    .pill.bad { color: var(--bad); background: var(--bad-bg); border-color: #efb9b2; }
+    .mono { font-family: var(--mono); font-size: 12px; }
+    .preview { margin-top: 4px; color: var(--muted); line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+    .empty { border: 1px dashed #aeb9ae; background: #fbfcfb; color: var(--muted); border-radius: 6px; padding: 14px; font-size: 13px; line-height: 1.5; }
+    pre { margin: 8px 0 0; padding: 10px; max-height: 278px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; border-radius: 6px; background: #172023; color: #edf4ef; font-family: var(--mono); font-size: 11px; line-height: 1.5; }
+    details { margin-top: 10px; border-top: 1px solid var(--line); padding-top: 8px; }
+    summary { cursor: pointer; color: var(--accent-2); font-size: 13px; }
+    .review-focus { outline: 3px solid rgba(40, 95, 155, .22); outline-offset: 3px; }
+    @media (max-width: 1180px) {
+      .app, .app.no-drawer { grid-template-columns: 236px minmax(0, 1fr); }
+      .drawer { position: static; grid-column: 1 / -1; height: auto; border-left: 0; border-top: 1px solid var(--line); }
+      .drawer.hidden { display: none; }
+      .toolbar, .detail-grid { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 780px) {
+      .app, .app.no-drawer, .metrics, .meta-grid, .event { grid-template-columns: 1fr; }
+      .rail { position: static; height: auto; border-right: 0; border-bottom: 1px solid var(--line); }
+      .main { padding: 14px; }
       .topbar { display: grid; }
+      table { min-width: 760px; }
+      .table-wrap { overflow-x: auto; }
     }
   </style>
 </head>
 <body>
-  <div class="shell">
-    <aside>
-      <div class="brand">Evo Bypass<small>Runtime session review surface for hook records, evidence snippets, and knowledge suggestions.</small></div>
-      <div class="rail-section"><div class="rail-label">Workspace</div><div class="mono" id="workspace">Loading...</div></div>
-      <div class="rail-section" id="railStats"></div>
+  <div class="app no-drawer" id="appShell">
+    <aside class="rail">
+      <div class="brand">
+        <div class="mark">EB</div>
+        <div><strong>Evo Bypass</strong><span>Async review console</span></div>
+      </div>
+      <div class="section">
+        <div class="label">Workspace</div>
+        <div class="workspace mono" id="workspace">Loading...</div>
+      </div>
+      <div class="section">
+        <div class="label">Service</div>
+        <div class="status-line" id="serviceStatus"></div>
+      </div>
+      <div class="section" id="railStats"></div>
     </aside>
-    <main>
+
+    <main class="main">
       <section id="listRoute" class="route active">
         <div class="topbar">
-          <div><h1>Session records</h1><p class="subtitle">任务结束时打开的旁路观察台。用 session_id 追踪每次主 agent 会话，快速判断这次是否产生了可沉淀的知识更新。</p></div>
+          <div>
+            <h1>Review sessions</h1>
+            <p class="subtitle">Track async review jobs, inspect evidence, and apply approved knowledge updates from real session artifacts.</p>
+          </div>
+          <button class="btn icon" id="refreshList" title="Refresh sessions" type="button">↻</button>
         </div>
         <div class="metrics" id="listMetrics"></div>
         <div class="toolbar">
-          <input id="searchInput" type="search" placeholder="搜索 session_id、prompt、signal">
-          <select id="runtimeFilter"><option value="all">全部 runtime</option><option value="codex">codex</option><option value="claude">claude</option></select>
-          <select id="suggestionFilter"><option value="all">全部建议状态</option><option value="with">有知识建议</option><option value="without">无知识建议</option></select>
+          <input id="searchInput" type="search" placeholder="Search session, prompt, signal">
+          <select id="runtimeFilter"><option value="all">All runtimes</option><option value="codex">codex</option><option value="claude">claude</option></select>
+          <select id="jobFilter"><option value="all">All jobs</option><option value="queued">queued</option><option value="running">running</option><option value="succeeded">succeeded</option><option value="failed">failed</option><option value="skipped">skipped</option><option value="none">none</option></select>
+          <select id="actionFilter"><option value="all">All reviews</option><option value="ready">Ready to approve</option><option value="empty">No actions</option></select>
         </div>
         <div class="table-wrap">
           <table>
-            <thead><tr><th style="width:30%">session_id</th><th style="width:14%">created_at</th><th style="width:10%">runtime</th><th style="width:14%">events</th><th style="width:17%">signals</th><th style="width:15%">suggestions</th></tr></thead>
-            <tbody id="sessionRows"><tr><td colspan="6" class="empty">Loading sessions...</td></tr></tbody>
+            <thead><tr><th style="width:28%">session</th><th style="width:13%">created</th><th style="width:12%">runtime</th><th style="width:12%">job</th><th style="width:13%">events</th><th style="width:12%">review</th><th style="width:10%">signals</th></tr></thead>
+            <tbody id="sessionRows"><tr><td colspan="7"><div class="empty">Loading sessions...</div></td></tr></tbody>
           </table>
         </div>
       </section>
+
       <section id="detailRoute" class="route">
-        <div class="topbar"><div><h1>Session detail</h1><p class="subtitle" id="detailSubtitle"></p></div><a class="button" href="/sessions">返回列表</a></div>
-        <div class="metrics" id="detailMetrics"></div>
-        <div class="detail">
+        <div class="topbar">
           <div>
-            <section class="panel"><div class="panel-head"><h2 class="panel-title">Metadata</h2><span class="pill" id="runtimePill"></span></div><div class="panel-body" id="metadataPanel"></div></section>
-            <section class="panel"><div class="panel-head"><h2 class="panel-title">Hook timeline</h2><span class="muted" id="timelineCount"></span></div><div class="panel-body"><div class="timeline" id="timeline"></div></div></section>
+            <h1 id="detailTitle">Session detail</h1>
+            <p class="subtitle" id="detailSubtitle"></p>
+          </div>
+          <div class="pill-row">
+            <button class="btn icon" id="refreshDetail" title="Refresh detail" type="button">↻</button>
+            <a class="btn" href="/sessions">Sessions</a>
+          </div>
+        </div>
+        <div class="metrics" id="detailMetrics"></div>
+        <div class="detail-grid">
+          <div>
+            <section class="panel">
+              <div class="panel-head"><h2 class="panel-title">Metadata</h2><span class="pill" id="runtimePill">runtime</span></div>
+              <div class="panel-body" id="metadataPanel"></div>
+            </section>
+            <section class="panel">
+              <div class="panel-head"><h2 class="panel-title">Timeline and evidence</h2><span class="muted" id="timelineCount"></span></div>
+              <div class="panel-body"><div class="timeline" id="timeline"></div></div>
+            </section>
           </div>
           <aside>
-            <section class="panel"><div class="panel-head"><h2 class="panel-title">Suggestions</h2><span class="muted" id="suggestionCount"></span></div><div class="panel-body" id="suggestionsPanel"></div></section>
-            <section class="panel"><div class="panel-head"><h2 class="panel-title">Selected event</h2></div><div class="panel-body" id="selectedEventPanel"></div></section>
-            <section class="panel"><div class="panel-head"><h2 class="panel-title">Reviewer log</h2></div><div class="panel-body" id="reviewerPanel"></div></section>
+            <section class="panel">
+              <div class="panel-head"><h2 class="panel-title">Review findings</h2><span class="muted" id="findingCount"></span></div>
+              <div class="panel-body" id="findingsPanel"></div>
+            </section>
+            <section class="panel">
+              <div class="panel-head"><h2 class="panel-title">Selected event</h2></div>
+              <div class="panel-body" id="selectedEventPanel"></div>
+            </section>
+            <section class="panel">
+              <div class="panel-head"><h2 class="panel-title">Reviewer log</h2></div>
+              <div class="panel-body" id="reviewerPanel"></div>
+            </section>
           </aside>
         </div>
       </section>
     </main>
+
+    <aside class="drawer hidden" id="approvalPanel" aria-live="polite">
+      <div class="topbar">
+        <div>
+          <h1>Approvals</h1>
+          <p class="subtitle">Select update_knowledge actions, edit proposed text, then apply through the service endpoint.</p>
+        </div>
+      </div>
+      <div id="approvalList" class="action-list"></div>
+      <div class="drawer-actions">
+        <button class="btn" id="selectAllActions" type="button">Select all</button>
+        <button class="btn primary" id="applyActions" type="button">Apply selected</button>
+      </div>
+      <div class="result" id="applyResult">No actions selected.</div>
+    </aside>
   </div>
+
   <script>
-    const state = { sessions: [], detail: null, query: "", runtime: "all", suggestions: "all", selectedEventId: null };
-    const nodes = Object.fromEntries(["workspace","railStats","listRoute","detailRoute","sessionRows","searchInput","runtimeFilter","suggestionFilter","listMetrics","detailMetrics","detailSubtitle","runtimePill","metadataPanel","timeline","timelineCount","suggestionsPanel","suggestionCount","selectedEventPanel","reviewerPanel"].map((id) => [id, document.getElementById(id)]));
+    const state = {
+      sessions: [],
+      detail: null,
+      query: "",
+      runtime: "all",
+      job: "all",
+      actions: "all",
+      selectedEventId: null,
+      selectedActionIds: new Set(),
+      edits: {},
+      applying: false,
+      applyMessage: "",
+      applyTone: ""
+    };
+    const ids = ["appShell","workspace","serviceStatus","railStats","listRoute","detailRoute","sessionRows","searchInput","runtimeFilter","jobFilter","actionFilter","refreshList","refreshDetail","listMetrics","detailMetrics","detailTitle","detailSubtitle","runtimePill","metadataPanel","timeline","timelineCount","findingsPanel","findingCount","selectedEventPanel","reviewerPanel","approvalPanel","approvalList","selectAllActions","applyActions","applyResult"];
+    const nodes = Object.fromEntries(ids.map((id) => [id, document.getElementById(id)]));
 
     nodes.searchInput.addEventListener("input", (event) => { state.query = event.target.value.trim().toLowerCase(); renderList(); });
     nodes.runtimeFilter.addEventListener("change", (event) => { state.runtime = event.target.value; renderList(); });
-    nodes.suggestionFilter.addEventListener("change", (event) => { state.suggestions = event.target.value; renderList(); });
-    window.addEventListener("popstate", renderRoute);
+    nodes.jobFilter.addEventListener("change", (event) => { state.job = event.target.value; renderList(); });
+    nodes.actionFilter.addEventListener("change", (event) => { state.actions = event.target.value; renderList(); });
+    nodes.refreshList.addEventListener("click", () => loadList().catch(showListError));
+    nodes.refreshDetail.addEventListener("click", () => {
+      const sessionId = currentSessionId();
+      if (sessionId) loadDetail(sessionId).catch(showDetailError);
+    });
+    nodes.selectAllActions.addEventListener("click", selectAllActions);
+    nodes.applyActions.addEventListener("click", applySelectedActions);
+    window.addEventListener("popstate", () => renderRoute().catch(showListError));
     document.addEventListener("click", (event) => {
-      const row = event.target.closest("[data-session]");
-      if (row) { event.preventDefault(); history.pushState({}, "", `/sessions/${encodeURIComponent(row.dataset.session)}`); renderRoute(); }
       const inspect = event.target.closest("[data-event]");
-      if (inspect) { state.selectedEventId = inspect.dataset.event; renderDetail(); }
+      if (inspect) {
+        state.selectedEventId = inspect.dataset.event;
+        renderDetail();
+        return;
+      }
+      if (event.target.closest("a, button, input, textarea, select, label")) return;
+      const row = event.target.closest("[data-session]");
+      if (row) {
+        event.preventDefault();
+        history.pushState({}, "", `/sessions/${encodeURIComponent(row.dataset.session)}`);
+        renderRoute().catch(showListError);
+      }
+    });
+    document.addEventListener("change", (event) => {
+      if (event.target.matches("[data-action-select]")) {
+        const id = event.target.dataset.actionSelect;
+        if (event.target.checked) state.selectedActionIds.add(id);
+        else state.selectedActionIds.delete(id);
+        clearApplyMessage();
+        renderApplyState();
+      }
+    });
+    document.addEventListener("input", (event) => {
+      if (event.target.matches("[data-action-edit]")) {
+        state.edits[event.target.dataset.actionEdit] = event.target.value;
+        clearApplyMessage();
+        renderApplyState();
+      }
     });
 
-    async function api(path) {
-      const response = await fetch(path);
-      if (!response.ok) throw new Error(`${path} returned ${response.status}`);
-      return response.json();
+    async function api(path, options) {
+      const response = await fetch(path, options);
+      const type = response.headers.get("content-type") || "";
+      const body = type.includes("application/json") ? await response.json() : await response.text();
+      if (!response.ok) {
+        const message = body && typeof body === "object" && body.error ? body.error : `${path} returned ${response.status}`;
+        const error = new Error(message);
+        error.status = response.status;
+        throw error;
+      }
+      return body;
     }
 
     async function loadList() {
@@ -151,104 +302,251 @@
       state.sessions = data.sessions || [];
       nodes.workspace.textContent = data.root || "";
       renderRailStats();
+      renderServiceStatus();
       renderList();
     }
 
-    async function loadDetail(sessionId) {
+    async function loadDetail(sessionId, { preserveApplyMessage = false } = {}) {
       state.detail = null;
       state.selectedEventId = null;
+      state.selectedActionIds = new Set();
+      state.edits = {};
+      if (!preserveApplyMessage) clearApplyMessage();
       nodes.timeline.innerHTML = `<div class="empty">Loading session detail...</div>`;
-      state.detail = await api(`/api/sessions/${encodeURIComponent(sessionId)}`);
+      const detail = await api(`/api/sessions/${encodeURIComponent(sessionId)}`);
+      state.detail = detail;
+      const actions = updateKnowledgeActions(detail);
+      for (const action of actions) {
+        state.edits[action.id] = action.proposed_text || "";
+      }
       renderDetail();
+      if (new URLSearchParams(location.search).get("review") === "ready" && actions.length) {
+        requestAnimationFrame(() => {
+          nodes.approvalPanel.classList.add("review-focus");
+          nodes.approvalPanel.scrollIntoView({ block: "nearest", behavior: "smooth" });
+        });
+      }
     }
 
     async function renderRoute() {
-      const match = location.pathname.match(/^\/sessions\/([^/]+)$/);
-      if (match) {
+      const sessionId = currentSessionId();
+      if (sessionId) {
         nodes.listRoute.classList.remove("active");
         nodes.detailRoute.classList.add("active");
-        await loadDetail(decodeURIComponent(match[1]));
+        await loadDetail(sessionId);
       } else {
         nodes.detailRoute.classList.remove("active");
         nodes.listRoute.classList.add("active");
+        hideApprovalPanel();
         if (state.sessions.length === 0) await loadList();
         else renderList();
       }
     }
 
-    function renderRailStats() {
-      const totalEvents = state.sessions.reduce((sum, item) => sum + item.event_count, 0);
-      const totalActions = state.sessions.reduce((sum, item) => sum + item.suggestion_count, 0);
-      nodes.railStats.innerHTML = `<div class="rail-label">Current index</div>${rail("Sessions", state.sessions.length)}${rail("Hook events", totalEvents)}${rail("Knowledge actions", totalActions)}${rail("Runtime", "web")}`;
-    }
-
     function renderList() {
       const rows = filteredSessions();
-      nodes.listMetrics.innerHTML = [metric("sessions", rows.length), metric("events", rows.reduce((sum, item) => sum + item.event_count, 0)), metric("knowledge actions", rows.reduce((sum, item) => sum + item.suggestion_count, 0)), metric("findings", rows.reduce((sum, item) => sum + (item.finding_count || 0), 0)), metric("failures", rows.reduce((sum, item) => sum + item.failure_count, 0))].join("");
+      nodes.listMetrics.innerHTML = [
+        metric("sessions", rows.length),
+        metric("queued", rows.filter((item) => item.job_status === "queued").length),
+        metric("running", rows.filter((item) => item.job_status === "running").length),
+        metric("ready", rows.filter((item) => item.suggestion_count > 0).length),
+        metric("events", rows.reduce((sum, item) => sum + (item.event_count || 0), 0)),
+        metric("failures", rows.reduce((sum, item) => sum + (item.failure_count || 0), 0))
+      ].join("");
       if (!rows.length) {
-        nodes.sessionRows.innerHTML = `<tr><td colspan="6"><div class="empty">没有匹配的 session。</div></td></tr>`;
+        nodes.sessionRows.innerHTML = `<tr><td colspan="7"><div class="empty">No sessions match the current filters.</div></td></tr>`;
         return;
       }
-      nodes.sessionRows.innerHTML = rows.map((session) => `<tr data-session="${escapeHtml(session.session_id)}"><td><div class="mono">${escapeHtml(session.session_id)}</div><div class="preview">${escapeHtml(session.prompt_preview)}</div></td><td><span class="mono">${escapeHtml(formatDate(session.created_at))}</span></td><td>${pill(session.runtime)}</td><td><div class="mono">${session.event_count} events</div><div class="muted">${session.failure_count} failure</div></td><td><div class="pill-row">${session.signals.length ? session.signals.map((item) => pill(item, item.includes("failure") ? "bad" : "warn")).join("") : pill("none")}</div></td><td>${pill(`${session.suggestion_count} action${session.suggestion_count === 1 ? "" : "s"}`, session.suggestion_count > 0 ? "good" : "")}</td></tr>`).join("");
+      nodes.sessionRows.innerHTML = rows.map((session) => `<tr data-session="${escapeHtml(session.session_id)}"><td><a class="session-link" href="/sessions/${encodeURIComponent(session.session_id)}"><div class="mono">${escapeHtml(session.session_id)}</div><div class="preview">${escapeHtml(session.prompt_preview || "")}</div></a></td><td><span class="mono">${escapeHtml(formatDate(session.created_at))}</span></td><td>${pill(session.runtime)}</td><td>${pill(session.job_status || "none", jobTone(session.job_status))}</td><td><div class="mono">${escapeHtml(session.event_count || 0)} events</div><div class="muted">${escapeHtml(session.failure_count || 0)} failures</div></td><td>${pill(`${session.suggestion_count || 0} update${session.suggestion_count === 1 ? "" : "s"}`, session.suggestion_count > 0 ? "good" : "")}</td><td><div class="pill-row">${(session.signals || []).length ? session.signals.slice(0, 3).map((signal) => pill(signal, signalTone(signal))).join("") : pill("none")}</div></td></tr>`).join("");
     }
 
     function renderDetail() {
       const session = state.detail;
       if (!session) return;
-      const events = session.events || [];
       const metadata = session.metadata || {};
-      const findings = session.retrospective?.retrospective?.findings || [];
-      const knowledgeActions = findings.length ? findings.filter((finding) => finding.action?.type === "update_knowledge") : session.suggestions?.suggestions || [];
-      nodes.workspace.textContent = metadata.working_directory || nodes.workspace.textContent || "";
+      const events = session.events || [];
+      const findings = retrospectiveFindings(session);
+      const actions = updateKnowledgeActions(session);
       if (!events.some((item) => item.id === state.selectedEventId)) state.selectedEventId = events[0]?.id || null;
+      nodes.workspace.textContent = metadata.working_directory || nodes.workspace.textContent || "";
+      nodes.detailTitle.textContent = "Session detail";
       nodes.detailSubtitle.innerHTML = `<span class="mono">${escapeHtml(session.session_id)}</span>`;
       nodes.runtimePill.textContent = metadata.runtime || "unknown";
-      nodes.detailMetrics.innerHTML = [metric("events", events.length), metric("failures", events.filter((item) => item.status === "failure").length), metric("signals", new Set(events.flatMap((item) => item.signals || [])).size), metric("findings", findings.length), metric("knowledge actions", knowledgeActions.length), metric("malformed", session.malformedEventCount || 0)].join("");
-      nodes.metadataPanel.innerHTML = `<div class="meta-grid">${kv("session_id", metadata.session_id || session.session_id)}${kv("created_at", metadata.created_at)}${kv("runtime", metadata.runtime)}${kv("plugin_version", metadata.plugin_version)}${kv("working_directory", metadata.working_directory)}${kv("source", ".bypass/sessions")}</div><details><summary>查看 original_prompt</summary><pre>${escapeHtml(metadata.original_prompt || "")}</pre></details>`;
+      nodes.detailMetrics.innerHTML = [
+        metric("job", session.job?.status || "none"),
+        metric("events", events.length),
+        metric("failures", events.filter((item) => item.status === "failure").length),
+        metric("findings", findings.length),
+        metric("updates", actions.length),
+        metric("malformed", session.malformedEventCount || 0)
+      ].join("");
+      nodes.metadataPanel.innerHTML = `<div class="meta-grid">${field("session_id", metadata.session_id || session.session_id)}${field("created_at", metadata.created_at)}${field("runtime", metadata.runtime)}${field("job_status", session.job?.status || "none")}${field("working_directory", metadata.working_directory)}${field("plugin_version", metadata.plugin_version)}</div><details><summary>Original prompt</summary><pre>${escapeHtml(metadata.original_prompt || "")}</pre></details>${session.job ? `<details><summary>Job JSON</summary><pre>${escapeHtml(JSON.stringify(session.job, null, 2))}</pre></details>` : ""}`;
       nodes.timelineCount.textContent = `${events.length} captured`;
-      nodes.timeline.innerHTML = events.length ? events.map((eventItem) => `<article class="event ${eventItem.id === state.selectedEventId ? "active" : ""}"><div class="event-time"><div>${escapeHtml(formatTime(eventItem.timestamp))}</div><div>${escapeHtml(eventItem.hook)}</div><div>${escapeHtml(eventItem.status)}</div></div><div><p class="event-summary">${escapeHtml(eventItem.summary)}</p><div class="pill-row">${pill(eventItem.tool)}${(eventItem.signals || []).map((item) => pill(item, item.includes("failure") ? "bad" : "warn")).join("")}${(eventItem.paths || []).length ? pill(`${eventItem.paths.length} path`) : ""}<button class="mini" data-event="${escapeHtml(eventItem.id)}">Inspect</button></div></div></article>`).join("") : `<div class="empty">这个 session 没有 event 记录。</div>`;
-      renderActions(session);
+      nodes.timeline.innerHTML = events.length ? events.map((eventItem) => `<article class="event ${eventItem.id === state.selectedEventId ? "active" : ""}"><div class="event-time"><div>${escapeHtml(formatTime(eventItem.timestamp))}</div><div>${escapeHtml(eventItem.hook)}</div><div>${escapeHtml(eventItem.status)}</div></div><div><p class="event-summary">${escapeHtml(eventItem.summary || "")}</p><div class="pill-row">${pill(eventItem.tool)}${(eventItem.signals || []).map((signal) => pill(signal, signalTone(signal))).join("")}${(eventItem.evidence || []).length ? pill(`${eventItem.evidence.length} evidence`) : ""}<button class="btn icon" data-event="${escapeHtml(eventItem.id)}" title="Inspect event" type="button">⌕</button></div></div></article>`).join("") : `<div class="empty">No hook events were captured for this session.</div>`;
+      renderFindings(findings, actions);
       renderSelectedEvent(session);
+      renderApprovalPanel(actions);
+      renderRailStats();
+      renderServiceStatus();
       nodes.reviewerPanel.innerHTML = `<pre>${escapeHtml(session.reviewerLog || "No reviewer log captured.")}</pre>`;
     }
 
-    function renderActions(session) {
-      const findings = session.retrospective?.retrospective?.findings || [];
-      const actions = findings.length ? findings.filter((finding) => finding.action?.type === "update_knowledge").map((finding) => ({ id: finding.id, kind: finding.category, confidence: finding.action.confidence, target: finding.action.target, proposed_text: finding.action.proposed_text, rationale: finding.action.rationale || finding.diagnosis, evidence: finding.evidence })) : session.suggestions?.suggestions || [];
-      nodes.suggestionCount.textContent = session.retrospective?.summary || session.suggestions?.summary || "";
-      if (!actions.length) {
-        nodes.suggestionsPanel.innerHTML = `<div class="empty">本次任务没有需要确认的知识更新动作。主 agent 可以直接结束，不需要打断用户确认。</div>`;
+    function renderFindings(findings, actions) {
+      nodes.findingCount.textContent = `${findings.length} findings`;
+      if (!findings.length) {
+        nodes.findingsPanel.innerHTML = `<div class="empty">No retrospective findings are available yet.</div>`;
         return;
       }
-      nodes.suggestionsPanel.innerHTML = actions.map((action) => `<article class="suggestion"><div class="pill-row">${pill(action.kind, "good")}${pill(action.confidence)}${pill(action.id)}</div><h3>${escapeHtml(action.proposed_text)}</h3><div class="focus">${escapeHtml(action.target)}</div><p>${escapeHtml(action.rationale)}</p><p class="mono">Evidence: ${escapeHtml((action.evidence || []).join(", "))}</p></article>`).join("");
+      const actionIds = new Set(actions.map((action) => action.id));
+      nodes.findingsPanel.innerHTML = findings.map((finding) => `<article class="action-card"><div class="pill-row">${pill(finding.category || "finding")}${pill(finding.severity || "unknown", severityTone(finding.severity))}${finding.action?.type ? pill(finding.action.type, actionIds.has(finding.id) ? "good" : "") : ""}</div><p class="action-title">${escapeHtml(finding.diagnosis || finding.recommendation || finding.id)}</p>${finding.recommendation ? `<div class="preview">${escapeHtml(finding.recommendation)}</div>` : ""}${(finding.evidence || []).length ? `<div class="action-target mono">Evidence: ${escapeHtml(finding.evidence.join(", "))}</div>` : ""}</article>`).join("");
+    }
+
+    function renderApprovalPanel(actions) {
+      if (!actions.length) {
+        hideApprovalPanel();
+        return;
+      }
+      nodes.appShell.classList.remove("no-drawer");
+      nodes.approvalPanel.classList.remove("hidden");
+      nodes.approvalList.innerHTML = actions.map((action) => `<article class="action-card ${new URLSearchParams(location.search).get("review") === "ready" ? "focused" : ""}"><label class="action-check"><input type="checkbox" data-action-select="${escapeHtml(action.id)}" ${state.selectedActionIds.has(action.id) ? "checked" : ""}><span><strong class="mono">${escapeHtml(action.id)}</strong><span class="pill-row" style="margin-top:6px">${pill(action.confidence || "unknown")}${pill(action.category || "knowledge", "good")}</span></span></label><div class="action-target mono">${escapeHtml(action.target || "")}</div><p class="action-title">${escapeHtml(action.rationale || "")}</p><textarea data-action-edit="${escapeHtml(action.id)}" aria-label="Edited proposed text for ${escapeHtml(action.id)}">${escapeHtml(state.edits[action.id] ?? action.proposed_text ?? "")}</textarea></article>`).join("");
+      renderApplyState();
+    }
+
+    function renderApplyState() {
+      const count = state.selectedActionIds.size;
+      nodes.applyActions.disabled = state.applying || count === 0;
+      nodes.applyResult.className = `result ${state.applyTone}`.trim();
+      if (state.applyMessage) nodes.applyResult.textContent = state.applyMessage;
+      else if (!count) nodes.applyResult.textContent = "No actions selected.";
+      else nodes.applyResult.textContent = `${count} action${count === 1 ? "" : "s"} selected.`;
+    }
+
+    async function applySelectedActions() {
+      const session = state.detail;
+      if (!session || state.selectedActionIds.size === 0) return;
+      const approved_suggestion_ids = [...state.selectedActionIds];
+      const edits = Object.fromEntries(approved_suggestion_ids.map((id) => [id, state.edits[id] || ""]));
+      state.applying = true;
+      state.applyMessage = "Applying selected updates...";
+      state.applyTone = "";
+      renderApplyState();
+      try {
+        const result = await api(`/api/sessions/${encodeURIComponent(session.session_id)}/apply`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ approved_suggestion_ids, edits })
+        });
+        const appliedCount = result.applied_count ?? approved_suggestion_ids.length;
+        await loadDetail(session.session_id, { preserveApplyMessage: true });
+        state.applyMessage = `Applied ${appliedCount} update${appliedCount === 1 ? "" : "s"}.`;
+        state.applyTone = "good";
+      } catch (error) {
+        state.applyMessage = error.status === 405 || error.status === 404 ? "Apply endpoint is not available in this server. Start the service server to apply approvals." : error.message;
+        state.applyTone = "bad";
+      } finally {
+        state.applying = false;
+        renderApplyState();
+      }
+    }
+
+    function selectAllActions() {
+      const actions = updateKnowledgeActions(state.detail);
+      const allSelected = actions.length > 0 && actions.every((action) => state.selectedActionIds.has(action.id));
+      state.selectedActionIds = new Set(allSelected ? [] : actions.map((action) => action.id));
+      clearApplyMessage();
+      renderApprovalPanel(actions);
+    }
+
+    function clearApplyMessage() {
+      state.applyMessage = "";
+      state.applyTone = "";
     }
 
     function renderSelectedEvent(session) {
       const selected = (session.events || []).find((item) => item.id === state.selectedEventId);
-      if (!selected) { nodes.selectedEventPanel.innerHTML = `<div class="empty">选择一个 hook event 查看完整字段。</div>`; return; }
+      if (!selected) {
+        nodes.selectedEventPanel.innerHTML = `<div class="empty">Select a timeline event to inspect raw fields.</div>`;
+        return;
+      }
       nodes.selectedEventPanel.innerHTML = `<div class="pill-row">${pill(selected.hook)}${pill(selected.status, selected.status === "failure" ? "bad" : selected.status === "success" ? "good" : "")}${pill(selected.tool)}</div><pre>${escapeHtml(JSON.stringify(selected, null, 2))}</pre>`;
+    }
+
+    function renderRailStats() {
+      const sessions = state.sessions || [];
+      const detail = state.detail;
+      const totalEvents = sessions.reduce((sum, item) => sum + (item.event_count || 0), 0);
+      const ready = sessions.reduce((sum, item) => sum + (item.suggestion_count || 0), 0);
+      nodes.railStats.innerHTML = `<div class="label">Index</div>${rail("Sessions", sessions.length)}${rail("Hook events", totalEvents)}${rail("Review actions", ready)}${rail("Selected", detail?.session_id || "none")}`;
+    }
+
+    function renderServiceStatus() {
+      const detail = state.detail;
+      const jobStatus = detail?.job?.status || "none";
+      const reviewStatus = updateKnowledgeActions(detail).length ? "ready" : detail ? "no-actions" : "idle";
+      nodes.serviceStatus.innerHTML = `<div class="status-box"><strong>${escapeHtml(jobStatus)}</strong><span>selected job status</span></div><div class="status-box"><strong>${escapeHtml(reviewStatus)}</strong><span>review status</span></div>`;
+    }
+
+    function hideApprovalPanel() {
+      nodes.appShell.classList.add("no-drawer");
+      nodes.approvalPanel.classList.add("hidden");
+      nodes.approvalPanel.classList.remove("review-focus");
+      nodes.approvalList.innerHTML = "";
     }
 
     function filteredSessions() {
       return state.sessions.filter((session) => {
-        const haystack = [session.session_id, session.runtime, session.prompt_preview, (session.signals || []).join(" ")].join(" ").toLowerCase();
+        const haystack = [session.session_id, session.runtime, session.prompt_preview, session.job_status, (session.signals || []).join(" ")].join(" ").toLowerCase();
         return (!state.query || haystack.includes(state.query))
           && (state.runtime === "all" || session.runtime === state.runtime)
-          && (state.suggestions === "all" || (state.suggestions === "with" ? session.suggestion_count > 0 : session.suggestion_count === 0));
+          && (state.job === "all" || (session.job_status || "none") === state.job)
+          && (state.actions === "all" || (state.actions === "ready" ? (session.suggestion_count || 0) > 0 : (session.suggestion_count || 0) === 0));
       });
+    }
+
+    function updateKnowledgeActions(session) {
+      return retrospectiveFindings(session)
+        .filter((finding) => finding?.action?.type === "update_knowledge")
+        .map((finding) => ({
+          id: finding.id,
+          category: finding.category,
+          confidence: finding.action.confidence,
+          target: finding.action.target,
+          proposed_text: finding.action.proposed_text,
+          rationale: finding.action.rationale || finding.diagnosis || finding.recommendation,
+          evidence: finding.evidence || []
+        }));
+    }
+
+    function retrospectiveFindings(session) {
+      return Array.isArray(session?.retrospective?.retrospective?.findings) ? session.retrospective.retrospective.findings : [];
+    }
+
+    function currentSessionId() {
+      const match = location.pathname.match(/^\/sessions\/([^/]+)$/);
+      return match ? decodeURIComponent(match[1]) : "";
+    }
+
+    function showListError(error) {
+      nodes.sessionRows.innerHTML = `<tr><td colspan="7"><div class="empty">${escapeHtml(error.message)}</div></td></tr>`;
+    }
+
+    function showDetailError(error) {
+      nodes.timeline.innerHTML = `<div class="empty">${escapeHtml(error.message)}</div>`;
+      hideApprovalPanel();
     }
 
     function rail(label, value) { return `<div class="rail-stat"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`; }
     function metric(label, value) { return `<div class="metric"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`; }
-    function kv(label, value) { return `<div class="kv"><span>${escapeHtml(label)}</span><strong class="mono">${escapeHtml(value || "")}</strong></div>`; }
+    function field(label, value) { return `<div class="field"><span>${escapeHtml(label)}</span><strong class="mono">${escapeHtml(value || "")}</strong></div>`; }
     function pill(text, tone = "") { return `<span class="pill ${tone}">${escapeHtml(text || "unknown")}</span>`; }
-    function formatDate(value) { const date = new Date(value); return Number.isNaN(date.getTime()) ? value : new Intl.DateTimeFormat("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false }).format(date); }
+    function jobTone(status) { return status === "succeeded" ? "good" : status === "failed" ? "bad" : status === "running" || status === "queued" ? "warn" : ""; }
+    function signalTone(signal) { return String(signal || "").includes("failure") ? "bad" : "warn"; }
+    function severityTone(severity) { return severity === "high" || severity === "critical" ? "bad" : severity === "medium" ? "warn" : ""; }
+    function formatDate(value) { const date = new Date(value); return Number.isNaN(date.getTime()) ? value : new Intl.DateTimeFormat("en", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false }).format(date); }
     function formatTime(value) { const date = new Date(value); return Number.isNaN(date.getTime()) ? value : date.toISOString().slice(11, 19); }
     function escapeHtml(value) { return String(value ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#039;"); }
 
-    renderRoute().catch((error) => {
-      nodes.sessionRows.innerHTML = `<tr><td colspan="6"><div class="empty">${escapeHtml(error.message)}</div></td></tr>`;
-    });
+    renderRoute().catch(showListError);
   </script>
 </body>
 </html>

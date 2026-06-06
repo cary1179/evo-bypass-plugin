@@ -85,6 +85,22 @@ test('collectEvent creates metadata on UserPromptSubmit', async () => {
   assert.equal(metadata.working_directory, root);
 });
 
+test('collectEvent skips internal reviewer invocations', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-internal-'));
+  const result = await collectEvent({
+    root,
+    payload: { hook_event_name: 'UserPromptSubmit', session_id: 'sess_internal', prompt: 'review logs' },
+    env: { EVO_BYPASS_INTERNAL: '1' }
+  });
+
+  assert.equal(result.skipped, true);
+  assert.equal(result.reason, 'internal_invocation');
+  await assert.rejects(
+    fs.stat(path.join(root, '.bypass', 'sessions', 'sess_internal', 'events.jsonl')),
+    { code: 'ENOENT' }
+  );
+});
+
 test('collectEvent writes artifacts under trusted root instead of payload cwd', async () => {
   const trustedRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-trusted-'));
   const payloadRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-payload-'));

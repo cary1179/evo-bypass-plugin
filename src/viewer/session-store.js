@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { resolveSessionPaths } from '../core/session-paths.js';
+import { resolveServicePaths } from '../core/service-paths.js';
 
 export async function listSessions({ root = process.cwd() } = {}) {
   const sessionsDir = path.join(root, '.bypass', 'sessions');
@@ -57,6 +58,7 @@ export async function getSessionDetail({ root = process.cwd(), sessionId }) {
     }
   });
   const reviewerLog = await readText(paths.reviewerLogPath, '');
+  const job = await readJson(path.join(resolveServicePaths({ root }).jobsDir, `job_${sessionId}.json`), undefined);
 
   return {
     session_id: sessionId,
@@ -64,6 +66,7 @@ export async function getSessionDetail({ root = process.cwd(), sessionId }) {
     events,
     retrospective,
     suggestions,
+    job,
     reviewerLog,
     malformedEventCount: malformedCount
   };
@@ -79,6 +82,7 @@ function toSummary(detail) {
     runtime: detail.metadata?.runtime || 'unknown',
     event_count: events.length,
     failure_count: events.filter((event) => event.status === 'failure').length,
+    job_status: detail.job?.status || 'none',
     signals: [...new Set(events.flatMap((event) => Array.isArray(event.signals) ? event.signals : []))],
     finding_count: findings.length,
     suggestion_count: knowledgeActions.length,

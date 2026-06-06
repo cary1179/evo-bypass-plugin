@@ -96,6 +96,51 @@ test('applyApprovedUpdate writes approved update_knowledge findings from retrosp
   assert.match(knowledge, /apply retrospective actions/);
 });
 
+test('applyApprovedUpdate writes edited approval text instead of original proposed text', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-'));
+  const paths = resolveSessionPaths({ root, sessionId: 'sess_apply_edited_approval' });
+  await fs.mkdir(paths.sessionDir, { recursive: true });
+  await fs.writeFile(paths.suggestionsPath, JSON.stringify({
+    session_id: 'sess_apply_edited_approval',
+    suggestions: [
+      { id: 'sug_1', target: paths.defaultKnowledgePath, proposed_text: 'Original text must not be written.' }
+    ]
+  }));
+  await fs.writeFile(paths.approvalPath, JSON.stringify({
+    approved_at: new Date().toISOString(),
+    approved_suggestion_ids: ['sug_1'],
+    approval_text: 'yes, apply edited sug_1',
+    edited_actions: {
+      sug_1: { proposed_text: 'Edited legacy approval text.' }
+    }
+  }));
+
+  const result = await applyApprovedUpdate({ root, sessionId: 'sess_apply_edited_approval' });
+  const knowledge = await fs.readFile(paths.defaultKnowledgePath, 'utf8');
+
+  assert.equal(result.applied.length, 1);
+  assert.match(knowledge, /Edited legacy approval text/);
+  assert.equal(knowledge.includes('Original text must not be written'), false);
+});
+
+test('applyApprovedUpdate rejects blank edited approval text without falling back', async () => {
+  const { root, paths } = await writeApprovedUpdateFixture({
+    sessionId: 'sess_apply_blank_edited',
+    approvedSuggestionIds: ['sug_1'],
+    approvalExtra: {
+      edited_actions: {
+        sug_1: { proposed_text: '   ' }
+      }
+    }
+  });
+
+  await assert.rejects(
+    applyApprovedUpdate({ root, sessionId: 'sess_apply_blank_edited' }),
+    /approved suggestion must include id, safe target, and proposed_text/
+  );
+  await assert.rejects(fs.stat(paths.defaultKnowledgePath), { code: 'ENOENT' });
+});
+
 test('applyApprovedUpdate prefers retrospective findings over legacy suggestions', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-'));
   const paths = resolveSessionPaths({ root, sessionId: 'sess_apply_precedence' });
@@ -254,6 +299,60 @@ test('applyApprovedUpdate validates all approved suggestions before writing', as
   await assert.rejects(fs.stat(paths.appliedPatchPath), { code: 'ENOENT' });
 });
 
+test('applyApprovedUpdate preflights existing directory targets before any writes', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-'));
+  const paths = resolveSessionPaths({ root, sessionId: 'sess_apply_directory_target' });
+  const directoryTarget = path.join(root, 'directory-target');
+  await fs.mkdir(paths.sessionDir, { recursive: true });
+  await fs.mkdir(directoryTarget, { recursive: true });
+  await fs.writeFile(paths.suggestionsPath, JSON.stringify({
+    session_id: 'sess_apply_directory_target',
+    suggestions: [
+      { id: 'sug_1', target: paths.defaultKnowledgePath, proposed_text: 'Must not be partially written.' },
+      { id: 'sug_2', target: directoryTarget, proposed_text: 'Directory targets are invalid.' }
+    ]
+  }));
+  await fs.writeFile(paths.approvalPath, JSON.stringify({
+    approved_at: new Date().toISOString(),
+    approved_suggestion_ids: ['sug_1', 'sug_2'],
+    approval_text: 'yes, apply both suggestions'
+  }));
+
+  await assert.rejects(
+    applyApprovedUpdate({ root, sessionId: 'sess_apply_directory_target' }),
+    /target must be a file path/
+  );
+  await assert.rejects(fs.stat(paths.defaultKnowledgePath), { code: 'ENOENT' });
+  await assert.rejects(fs.stat(paths.appliedPatchPath), { code: 'ENOENT' });
+});
+
+test('applyApprovedUpdate treats a file parent in target path as validation before writes', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-'));
+  const paths = resolveSessionPaths({ root, sessionId: 'sess_apply_file_parent' });
+  const fileParent = path.join(root, 'notadir');
+  await fs.mkdir(paths.sessionDir, { recursive: true });
+  await fs.writeFile(fileParent, 'I am a file, not a directory.\n');
+  await fs.writeFile(paths.suggestionsPath, JSON.stringify({
+    session_id: 'sess_apply_file_parent',
+    suggestions: [
+      { id: 'sug_1', target: paths.defaultKnowledgePath, proposed_text: 'Must not be partially written.' },
+      { id: 'sug_2', target: path.join(fileParent, 'bad.md'), proposed_text: 'Parent file targets are invalid.' }
+    ]
+  }));
+  await fs.writeFile(paths.approvalPath, JSON.stringify({
+    approved_at: new Date().toISOString(),
+    approved_suggestion_ids: ['sug_1', 'sug_2'],
+    approval_text: 'yes, apply both suggestions'
+  }));
+
+  await assert.rejects(
+    applyApprovedUpdate({ root, sessionId: 'sess_apply_file_parent' }),
+    /target must be a file path/
+  );
+  await assert.rejects(fs.stat(paths.defaultKnowledgePath), { code: 'ENOENT' });
+  await assert.rejects(fs.stat(paths.appliedPatchPath), { code: 'ENOENT' });
+});
+
 test('applyApprovedUpdate rejects duplicate approval ids', async () => {
   const { root } = await writeApprovedUpdateFixture({
     sessionId: 'sess_apply_duplicate_ids',
@@ -278,7 +377,7 @@ test('applyApprovedUpdate rejects unknown approval ids', async () => {
   );
 });
 
-async function writeApprovedUpdateFixture({ sessionId, approvedSuggestionIds, suggestions }) {
+async function writeApprovedUpdateFixture({ sessionId, approvedSuggestionIds, suggestions, approvalExtra }) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-'));
   const paths = resolveSessionPaths({ root, sessionId });
   await fs.mkdir(paths.sessionDir, { recursive: true });
@@ -291,7 +390,8 @@ async function writeApprovedUpdateFixture({ sessionId, approvedSuggestionIds, su
   await fs.writeFile(paths.approvalPath, JSON.stringify({
     approved_at: new Date().toISOString(),
     approved_suggestion_ids: approvedSuggestionIds,
-    approval_text: 'yes, apply sug_1'
+    approval_text: 'yes, apply sug_1',
+    ...approvalExtra
   }));
 
   return { root, paths };

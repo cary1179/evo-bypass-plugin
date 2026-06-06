@@ -73,29 +73,32 @@ export async function claimNextJob({ root = process.cwd(), leaseMs = 180000, loc
   return undefined;
 }
 
-export async function completeJob({ root = process.cwd(), jobId, leaseToken }) {
+export async function completeJob({ root = process.cwd(), jobId, leaseToken, lockStaleMs = 60000 }) {
   return updateJob({
     root,
     jobId,
     leaseToken,
+    lockStaleMs,
     patch: { status: 'succeeded', finished_at: new Date().toISOString(), error: '' },
   });
 }
 
-export async function skipJob({ root = process.cwd(), jobId, leaseToken, error }) {
+export async function skipJob({ root = process.cwd(), jobId, leaseToken, lockStaleMs = 60000, error }) {
   return updateJob({
     root,
     jobId,
     leaseToken,
+    lockStaleMs,
     patch: { status: 'skipped', finished_at: new Date().toISOString(), error: error || '' },
   });
 }
 
-export async function failJob({ root = process.cwd(), jobId, leaseToken, error }) {
+export async function failJob({ root = process.cwd(), jobId, leaseToken, lockStaleMs = 60000, error }) {
   return updateJob({
     root,
     jobId,
     leaseToken,
+    lockStaleMs,
     patch: { status: 'failed', finished_at: new Date().toISOString(), error: error || '' },
   });
 }
@@ -160,15 +163,24 @@ export async function resetStaleRunningJobs({ root = process.cwd(), now = new Da
   return reset;
 }
 
-async function updateJob({ root, jobId, leaseToken, patch }) {
+async function updateJob({ root, jobId, leaseToken, lockStaleMs, patch }) {
   const paths = resolveServicePaths({ root });
-  const job = await readJob({ root, jobId });
-  if ((job.lease_token || leaseToken !== undefined) && job.lease_token !== leaseToken) {
-    throw new Error('stale job lease');
+  const release = await tryAcquireJobLock(paths.jobsDir, jobId, { lockStaleMs });
+  if (!release) {
+    throw new Error('job lock unavailable');
   }
-  const updated = { ...job, ...patch, lease_expires_at: '', lease_token: '' };
-  await writeJob(paths.jobsDir, updated);
-  return updated;
+
+  try {
+    const job = await readJob({ root, jobId });
+    if ((job.lease_token || leaseToken !== undefined) && job.lease_token !== leaseToken) {
+      throw new Error('stale job lease');
+    }
+    const updated = { ...job, ...patch, lease_expires_at: '', lease_token: '' };
+    await writeJob(paths.jobsDir, updated);
+    return updated;
+  } finally {
+    await release();
+  }
 }
 
 async function writeJob(jobsDir, job) {
@@ -185,12 +197,14 @@ async function tryAcquireJobLock(jobsDir, jobId, { lockStaleMs }) {
   const lockPath = claimLockFile(jobsDir, jobId);
   for (let attempt = 0; attempt < 2; attempt += 1) {
     let handle;
+    const metadata = lockMetadata();
+    const serializedMetadata = `${JSON.stringify(metadata)}\n`;
     try {
       handle = await fs.open(lockPath, 'wx');
-      await handle.writeFile(`${JSON.stringify({ created_at: new Date().toISOString() })}\n`);
+      await handle.writeFile(serializedMetadata);
       return async () => {
         await handle.close();
-        await fs.rm(lockPath, { force: true });
+        await removeOwnedLock(lockPath, serializedMetadata);
       };
     } catch (error) {
       if (handle) await handle.close();
@@ -207,31 +221,69 @@ function claimLockFile(jobsDir, jobId) {
   return path.join(jobsDir, `${jobId}.claim.lock`);
 }
 
-async function removeStaleLock(lockPath, { lockStaleMs }) {
+function lockMetadata() {
+  return {
+    owner: randomUUID(),
+    created_at: new Date().toISOString(),
+  };
+}
+
+async function removeStaleLock(lockPath, { lockStaleMs, beforeRemove } = {}) {
+  let originalContent;
   let stats;
   try {
+    originalContent = await fs.readFile(lockPath, 'utf8');
     stats = await fs.stat(lockPath);
   } catch (error) {
     if (error.code === 'ENOENT') return true;
     throw error;
   }
 
-  const createdAt = await readLockCreatedAt(lockPath);
+  const createdAt = readLockCreatedAt(originalContent);
   const lockTime = createdAt === undefined ? stats.mtimeMs : createdAt;
   if (Date.now() - lockTime <= lockStaleMs) return false;
+  if (beforeRemove) await beforeRemove();
+
+  // Local filesystem locking has a narrow TOCTOU window between this compare
+  // and rm; the byte-for-byte check prevents deleting a replacement observed
+  // before removal without introducing a second global lock.
+  let latestContent;
+  try {
+    latestContent = await fs.readFile(lockPath, 'utf8');
+  } catch (error) {
+    if (error.code === 'ENOENT') return true;
+    throw error;
+  }
+  if (latestContent !== originalContent) return false;
+
   await fs.rm(lockPath, { force: true });
   return true;
 }
 
-async function readLockCreatedAt(lockPath) {
+async function removeOwnedLock(lockPath, expectedContent) {
   try {
-    const parsed = JSON.parse(await fs.readFile(lockPath, 'utf8'));
+    const currentContent = await fs.readFile(lockPath, 'utf8');
+    if (currentContent === expectedContent) {
+      await fs.rm(lockPath, { force: true });
+    }
+  } catch (error) {
+    if (error.code !== 'ENOENT') throw error;
+  }
+}
+
+function readLockCreatedAt(content) {
+  try {
+    const parsed = JSON.parse(content);
     const time = Date.parse(parsed.created_at);
     return Number.isNaN(time) ? undefined : time;
   } catch {
     return undefined;
   }
 }
+
+export const _test = {
+  removeStaleLock,
+};
 
 function validateSessionId(sessionId) {
   if (!sessionId || typeof sessionId !== 'string') {

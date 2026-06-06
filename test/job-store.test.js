@@ -13,6 +13,7 @@ import {
   readJob,
   resetStaleRunningJobs,
   skipJob,
+  _test,
 } from '../src/service/job-store.js';
 
 test('enqueueJob writes a stable session job and dedupes duplicates', async () => {
@@ -137,6 +138,25 @@ test('terminal updates require the lease token for running claimed jobs', async 
   assert.equal(completed.lease_token, '');
 });
 
+test('terminal updates do not write while a fresh job lock is held', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-jobs-'));
+  const job = await enqueueJob({ root, sessionId: 'sess_terminal_locked', runtime: 'codex' });
+  const claimed = await claimNextJob({ root, leaseMs: 60000 });
+  const paths = resolveServicePaths({ root });
+  await fs.writeFile(
+    path.join(paths.jobsDir, `${job.id}.claim.lock`),
+    JSON.stringify({ owner: 'other-worker', created_at: new Date().toISOString() })
+  );
+
+  await assert.rejects(
+    () => completeJob({ root, jobId: job.id, leaseToken: claimed.lease_token, lockStaleMs: 60000 }),
+    /job lock unavailable/
+  );
+  const current = await readJob({ root, jobId: job.id });
+  assert.equal(current.status, 'running');
+  assert.equal(current.lease_token, claimed.lease_token);
+});
+
 test('claimNextJob returns one claim for concurrent callers of one queued job', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-jobs-'));
   const job = await enqueueJob({ root, sessionId: 'sess_concurrent', runtime: 'codex' });
@@ -190,6 +210,24 @@ test('claimNextJob removes stale claim locks and claims queued jobs', async () =
     fs.stat(path.join(paths.jobsDir, `${job.id}.claim.lock`)),
     { code: 'ENOENT' }
   );
+});
+
+test('stale lock removal keeps a replacement lock when content changes before removal', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-jobs-'));
+  const paths = resolveServicePaths({ root });
+  await fs.mkdir(paths.jobsDir, { recursive: true });
+  const lockPath = path.join(paths.jobsDir, 'job_sess_replaced.claim.lock');
+  const oldLock = JSON.stringify({ owner: 'old-worker', created_at: new Date(Date.now() - 10000).toISOString() });
+  const replacementLock = JSON.stringify({ owner: 'new-worker', created_at: new Date(Date.now() - 10000).toISOString() });
+  await fs.writeFile(lockPath, oldLock);
+
+  const removed = await _test.removeStaleLock(lockPath, {
+    lockStaleMs: 1,
+    beforeRemove: () => fs.writeFile(lockPath, replacementLock),
+  });
+
+  assert.equal(removed, false);
+  assert.equal(await fs.readFile(lockPath, 'utf8'), replacementLock);
 });
 
 test('resetStaleRunningJobs skips jobs while a fresh claim lock is held', async () => {

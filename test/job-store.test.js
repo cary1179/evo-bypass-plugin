@@ -28,6 +28,7 @@ test('enqueueJob writes a stable session job and dedupes duplicates', async () =
   assert.equal(first.started_at, '');
   assert.equal(first.finished_at, '');
   assert.equal(first.lease_expires_at, '');
+  assert.equal(first.lease_token, '');
   assert.equal(first.error, '');
   assert.equal(second.id, first.id);
   assert.equal(second.runtime, 'codex');
@@ -62,6 +63,7 @@ test('claimNextJob claims the oldest queued job and sets a lease', async () => {
   assert.ok(Date.parse(claimed.started_at) <= after);
   assert.ok(Date.parse(claimed.lease_expires_at) >= before + 60000);
   assert.ok(Date.parse(claimed.lease_expires_at) <= after + 60000);
+  assert.match(claimed.lease_token, /^[0-9a-f-]+$/i);
   assert.equal((await readJob({ root, jobId: older.id })).status, 'running');
 
   const next = await claimNextJob({ root, leaseMs: 60000 });
@@ -82,10 +84,12 @@ test('completeJob and failJob set terminal status and clear leases', async () =>
   assert.equal(completed.status, 'succeeded');
   assert.notEqual(completed.finished_at, '');
   assert.equal(completed.lease_expires_at, '');
+  assert.equal(completed.lease_token, '');
   assert.equal(completed.error, '');
   assert.equal(errored.status, 'failed');
   assert.notEqual(errored.finished_at, '');
   assert.equal(errored.lease_expires_at, '');
+  assert.equal(errored.lease_token, '');
   assert.equal(errored.error, 'bad json');
 });
 
@@ -100,9 +104,45 @@ test('skipJob sets skipped status and listJobs returns readable jobs', async () 
   assert.equal(skipped.status, 'skipped');
   assert.notEqual(skipped.finished_at, '');
   assert.equal(skipped.lease_expires_at, '');
+  assert.equal(skipped.lease_token, '');
   assert.equal(skipped.error, 'no events');
   assert.equal(jobs.length, 1);
   assert.equal(jobs[0].id, job.id);
+});
+
+test('claimNextJob returns one claim for concurrent callers of one queued job', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-jobs-'));
+  const job = await enqueueJob({ root, sessionId: 'sess_concurrent', runtime: 'codex' });
+
+  const claims = await Promise.all(Array.from({ length: 10 }, () => claimNextJob({ root, leaseMs: 60000 })));
+  const claimed = claims.filter(Boolean);
+
+  assert.equal(claimed.length, 1);
+  assert.equal(claimed[0].id, job.id);
+  assert.match(claimed[0].lease_token, /^[0-9a-f-]+$/i);
+  assert.equal((await readJob({ root, jobId: job.id })).lease_token, claimed[0].lease_token);
+});
+
+test('terminal updates reject stale lease tokens after reset and reclaim', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-jobs-'));
+  const job = await enqueueJob({ root, sessionId: 'sess_stale_owner', runtime: 'codex' });
+  const firstClaim = await claimNextJob({ root, leaseMs: 1 });
+  await new Promise((resolve) => setTimeout(resolve, 5));
+
+  await resetStaleRunningJobs({ root, now: new Date() });
+  const secondClaim = await claimNextJob({ root, leaseMs: 60000 });
+
+  await assert.rejects(
+    () => completeJob({ root, jobId: job.id, leaseToken: firstClaim.lease_token }),
+    /stale job lease/
+  );
+  const stillRunning = await readJob({ root, jobId: job.id });
+  assert.equal(stillRunning.status, 'running');
+  assert.equal(stillRunning.lease_token, secondClaim.lease_token);
+
+  const completed = await completeJob({ root, jobId: job.id, leaseToken: secondClaim.lease_token });
+  assert.equal(completed.status, 'succeeded');
+  assert.equal(completed.lease_token, '');
 });
 
 test('readJob validates safe job path segments', async () => {
@@ -128,5 +168,6 @@ test('resetStaleRunningJobs returns expired running jobs to queued', async () =>
   assert.equal((await readJob({ root, jobId: stale.id })).status, 'queued');
   assert.equal((await readJob({ root, jobId: stale.id })).started_at, '');
   assert.equal((await readJob({ root, jobId: stale.id })).lease_expires_at, '');
+  assert.equal((await readJob({ root, jobId: stale.id })).lease_token, '');
   assert.equal((await readJob({ root, jobId: fresh.id })).status, 'running');
 });

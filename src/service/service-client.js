@@ -1,7 +1,10 @@
 import { spawn } from 'node:child_process';
+import fsSync from 'node:fs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { resolveServicePaths } from '../core/service-paths.js';
+
+const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '[::1]']);
 
 export function serviceUrl({ host = '127.0.0.1', port = 8765 } = {}) {
   return `http://${host}:${port}`;
@@ -9,13 +12,13 @@ export function serviceUrl({ host = '127.0.0.1', port = 8765 } = {}) {
 
 export async function readServiceUrl({ root = process.cwd(), fallbackUrl } = {}) {
   if (process.env.EVO_BYPASS_SERVICE_URL) {
-    return process.env.EVO_BYPASS_SERVICE_URL;
+    return safeServiceUrl(process.env.EVO_BYPASS_SERVICE_URL, fallbackUrl);
   }
 
   const paths = resolveServicePaths({ root });
   try {
     const text = await fs.readFile(paths.serviceUrlPath, 'utf8');
-    return text.trim() || fallbackUrl;
+    return safeServiceUrl(text.trim(), fallbackUrl);
   } catch (error) {
     if (error.code === 'ENOENT') {
       return fallbackUrl;
@@ -98,6 +101,10 @@ export async function appendHookLog({ root = process.cwd(), file = 'stop-hook.lo
 }
 
 export function startServiceDetached({ root = process.cwd(), scriptPath, env = process.env } = {}) {
+  if (!scriptPath || !fsSync.existsSync(scriptPath)) {
+    return { started: false, reason: 'missing_script', scriptPath };
+  }
+
   const child = spawn(process.execPath, [scriptPath, '--root', root], {
     cwd: root,
     detached: true,
@@ -105,9 +112,25 @@ export function startServiceDetached({ root = process.cwd(), scriptPath, env = p
     env,
   });
   child.unref();
-  return child.pid;
+  return { started: true, pid: child.pid };
 }
 
 function trimTrailingSlashes(url) {
   return String(url).replace(/\/+$/, '');
+}
+
+function safeServiceUrl(candidate, fallbackUrl) {
+  if (!candidate) {
+    return fallbackUrl;
+  }
+
+  try {
+    const parsed = new URL(candidate);
+    if (parsed.protocol !== 'http:' || !LOOPBACK_HOSTS.has(parsed.hostname)) {
+      return fallbackUrl;
+    }
+    return trimTrailingSlashes(parsed.href);
+  } catch {
+    return fallbackUrl;
+  }
 }

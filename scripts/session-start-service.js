@@ -29,15 +29,25 @@ try {
     process.exit(0);
   }
 
-  const pid = startServiceDetached({
+  const start = startServiceDetached({
     root,
     scriptPath: path.join(repoRoot, 'scripts', 'evo-bypassd.js'),
     env: { ...process.env, EVO_BYPASS_STARTED_BY: 'SessionStart', EVO_BYPASS_RUNTIME: runtime },
   });
+  if (!start.started) {
+    await appendHookLog({
+      root,
+      file: 'service/session-start.log',
+      entry: { event: 'service_start_unavailable', runtime, reason: start.reason, scriptPath: start.scriptPath || '' },
+    });
+    emitContinue();
+    process.exit(0);
+  }
+
   await appendHookLog({
     root,
     file: 'service/session-start.log',
-    entry: { event: 'service_start_requested', runtime, pid },
+    entry: { event: 'service_start_requested', runtime, pid: start.pid },
   });
   emitContinue();
 } catch (error) {

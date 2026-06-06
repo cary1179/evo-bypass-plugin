@@ -4,7 +4,7 @@ import { resolveSessionPaths } from '../core/session-paths.js';
 import { readBypassConfig } from '../core/config.js';
 import { extractKnowledgeActions } from '../core/retrospective-schema.js';
 import { routeKnowledgeTarget } from '../knowledge-routing.js';
-import { claimNextJob, completeJobWithArtifacts, failJob, skipJob } from './job-store.js';
+import { claimNextJob, completeJobWithArtifacts, failJobWithArtifacts, skipJob } from './job-store.js';
 import { buildReviewerPrompt } from './reviewer-prompt.js';
 import { runReviewerCli } from './reviewer-runner.js';
 import { validateReviewerResult } from './reviewer-validation.js';
@@ -79,7 +79,6 @@ export async function runOneReviewJob({
 
     return { status: 'succeeded', result };
   } catch (error) {
-    await writeFailureLog({ paths, error });
     await failClaimedJob({ root, job, error });
     return { status: 'failed', error: errorMessage(error) };
   }
@@ -89,6 +88,10 @@ async function buildCandidates({ root, events, configuredTarget }) {
   const candidates = [];
   for (const event of events) {
     const route = await routeKnowledgeTarget({ root, event, configuredTarget });
+    const targetInfo = await safeTargetInfo({ root, filePath: route.target });
+    if (!targetInfo.safe) {
+      continue;
+    }
     const relativeTarget = path.relative(root, route.target);
     candidates.push({
       event_id: event.id,
@@ -97,8 +100,8 @@ async function buildCandidates({ root, events, configuredTarget }) {
       relative_target: relativeTarget && !relativeTarget.startsWith('..') && !path.isAbsolute(relativeTarget)
         ? relativeTarget
         : route.target,
-      target_exists: await safeFileExists({ root, filePath: route.target }),
-      target_preview: await safeFilePreview({ root, filePath: route.target })
+      target_exists: targetInfo.exists,
+      target_preview: await safeFilePreview(targetInfo)
     });
   }
   return candidates;
@@ -135,13 +138,7 @@ async function readJson(filePath, fallback) {
   }
 }
 
-async function safeFileExists({ root, filePath }) {
-  const info = await safeFileInfo({ root, filePath });
-  return info.exists;
-}
-
-async function safeFilePreview({ root, filePath, limit = 2000 }) {
-  const info = await safeFileInfo({ root, filePath });
+async function safeFilePreview(info, limit = 2000) {
   if (!info.exists) {
     return '';
   }
@@ -149,34 +146,38 @@ async function safeFilePreview({ root, filePath, limit = 2000 }) {
   return content.slice(0, limit);
 }
 
-async function safeFileInfo({ root, filePath }) {
+async function safeTargetInfo({ root, filePath }) {
+  const resolvedRoot = path.resolve(root);
   const rootPath = await fs.realpath(root);
   const targetPath = path.resolve(filePath);
+  if (!isInsideRoot({ rootPath: resolvedRoot, targetPath })) {
+    return { safe: false, exists: false };
+  }
 
   let lstat;
   try {
     lstat = await fs.lstat(targetPath);
   } catch (error) {
-    if (error.code === 'ENOENT') return { exists: false };
+    if (error.code === 'ENOENT') return { safe: true, exists: false };
     throw error;
   }
   if (!lstat.isFile() && !lstat.isSymbolicLink()) {
-    return { exists: false };
+    return { safe: false, exists: false };
   }
 
   let realPath;
   try {
     realPath = await fs.realpath(targetPath);
   } catch (error) {
-    if (error.code === 'ENOENT') return { exists: false };
+    if (error.code === 'ENOENT') return { safe: true, exists: false };
     throw error;
   }
   if (!isInsideRoot({ rootPath, targetPath: realPath })) {
-    return { exists: false };
+    return { safe: false, exists: false };
   }
 
   const stat = await fs.stat(realPath);
-  return { exists: stat.isFile(), realPath };
+  return { safe: stat.isFile(), exists: stat.isFile(), realPath };
 }
 
 function isInsideRoot({ rootPath, targetPath }) {
@@ -290,11 +291,13 @@ async function notificationPayload({ root, config, sessionId }) {
 
 async function failClaimedJob({ root, job, error }) {
   try {
-    await failJob({
+    const paths = resolveSessionPaths({ root, sessionId: job.session_id });
+    await failJobWithArtifacts({
       root,
       jobId: job.id,
       leaseToken: job.lease_token,
-      error: errorMessage(error)
+      error: errorMessage(error),
+      writeArtifacts: async () => writeFailureLog({ paths, error })
     });
   } catch (failError) {
     if (!/stale job lease/.test(errorMessage(failError))) {

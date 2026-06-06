@@ -124,6 +124,25 @@ export async function failJob({ root = process.cwd(), jobId, leaseToken, lockSta
   });
 }
 
+export async function failJobWithArtifacts({
+  root = process.cwd(),
+  jobId,
+  leaseToken,
+  lockStaleMs = 60000,
+  error,
+  writeArtifacts,
+}) {
+  return updateJob({
+    root,
+    jobId,
+    leaseToken,
+    lockStaleMs,
+    beforeWrite: typeof writeArtifacts === 'function' ? writeArtifacts : undefined,
+    ignoreBeforeWriteError: true,
+    patch: { status: 'failed', finished_at: new Date().toISOString(), error: error || '' },
+  });
+}
+
 export async function readJob({ root = process.cwd(), jobId }) {
   const paths = resolveServicePaths({ root });
   return JSON.parse(await fs.readFile(jobFile(paths.jobsDir, jobId), 'utf8'));
@@ -184,7 +203,7 @@ export async function resetStaleRunningJobs({ root = process.cwd(), now = new Da
   return reset;
 }
 
-async function updateJob({ root, jobId, leaseToken, lockStaleMs, patch, beforeWrite }) {
+async function updateJob({ root, jobId, leaseToken, lockStaleMs, patch, beforeWrite, ignoreBeforeWriteError = false }) {
   const paths = resolveServicePaths({ root });
   const release = await tryAcquireJobLock(paths.jobsDir, jobId, { lockStaleMs });
   if (!release) {
@@ -197,7 +216,13 @@ async function updateJob({ root, jobId, leaseToken, lockStaleMs, patch, beforeWr
       throw new Error('stale job lease');
     }
     if (beforeWrite) {
-      await beforeWrite(job);
+      try {
+        await beforeWrite(job);
+      } catch (error) {
+        if (!ignoreBeforeWriteError) {
+          throw error;
+        }
+      }
     }
     const updated = { ...job, ...patch, lease_expires_at: '', lease_token: '' };
     await writeJob(paths.jobsDir, updated);

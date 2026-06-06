@@ -10,6 +10,7 @@ import {
   completeJobWithArtifacts,
   enqueueJob,
   failJob,
+  failJobWithArtifacts,
   listJobs,
   readJob,
   resetStaleRunningJobs,
@@ -125,6 +126,47 @@ test('completeJobWithArtifacts writes artifacts only for the current lease', asy
 
   assert.equal(completed.status, 'succeeded');
   assert.equal(await fs.readFile(artifactPath, 'utf8'), 'current');
+});
+
+test('failJobWithArtifacts marks failed even when artifact writing fails', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-jobs-'));
+  await enqueueJob({ root, sessionId: 'sess_fail_artifact', runtime: 'codex' });
+  const claimed = await claimNextJob({ root, leaseMs: 60000 });
+
+  const failed = await failJobWithArtifacts({
+    root,
+    jobId: claimed.id,
+    leaseToken: claimed.lease_token,
+    error: 'reviewer exploded',
+    writeArtifacts: async () => {
+      throw new Error('log unavailable');
+    }
+  });
+
+  assert.equal(failed.status, 'failed');
+  assert.equal(failed.error, 'reviewer exploded');
+});
+
+test('failJobWithArtifacts does not write artifacts for stale leases', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-jobs-'));
+  const artifactPath = path.join(root, 'failure-log.txt');
+  await enqueueJob({ root, sessionId: 'sess_stale_fail_artifact', runtime: 'codex' });
+  const firstClaim = await claimNextJob({ root, leaseMs: 1 });
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  await resetStaleRunningJobs({ root, now: new Date() });
+  await claimNextJob({ root, leaseMs: 60000 });
+
+  await assert.rejects(
+    () => failJobWithArtifacts({
+      root,
+      jobId: firstClaim.id,
+      leaseToken: firstClaim.lease_token,
+      error: 'stale reviewer error',
+      writeArtifacts: async () => fs.writeFile(artifactPath, 'stale failure')
+    }),
+    /stale job lease/
+  );
+  await assert.rejects(fs.readFile(artifactPath, 'utf8'), { code: 'ENOENT' });
 });
 
 test('skipJob sets skipped status and listJobs returns readable jobs', async () => {

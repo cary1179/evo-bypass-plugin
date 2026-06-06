@@ -184,7 +184,7 @@ test('runOneReviewJob keeps valid events when JSONL contains malformed lines', a
   assert.match(await fs.readFile(paths.reviewerLogPath, 'utf8'), /Malformed event line count: 1/);
 });
 
-test('runOneReviewJob does not preview symlink targets outside root', async () => {
+test('runOneReviewJob omits symlink candidates outside root', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-worker-'));
   const outsideDir = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-outside-'));
   const outsideTarget = path.join(outsideDir, 'AGENTS.md');
@@ -194,12 +194,12 @@ test('runOneReviewJob does not preview symlink targets outside root', async () =
     events: [event({ id: 'evt_symlink', sessionId: 'sess_symlink' })]
   });
   await enqueueJob({ root, sessionId: 'sess_symlink', runtime: 'codex' });
-  let candidate;
+  let candidates;
 
   await runOneReviewJob({
     root,
     reviewer: async ({ payload }) => {
-      candidate = payload.candidates[0];
+      candidates = payload.candidates;
       return {
         raw: '{}',
         parsed: {
@@ -210,9 +210,49 @@ test('runOneReviewJob does not preview symlink targets outside root', async () =
     }
   });
 
-  assert.equal(candidate.target, path.join(root, 'AGENTS.md'));
-  assert.equal(candidate.target_exists, false);
-  assert.equal(candidate.target_preview, '');
+  assert.deepEqual(candidates, []);
+});
+
+test('runOneReviewJob rejects update_knowledge for outside symlink targets', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-worker-'));
+  const outsideDir = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-outside-'));
+  const outsideTarget = path.join(outsideDir, 'AGENTS.md');
+  await fs.writeFile(outsideTarget, 'SECRET OUTSIDE KNOWLEDGE\n');
+  await fs.symlink(outsideTarget, path.join(root, 'AGENTS.md'));
+  await writeSession(root, 'sess_symlink_update', {
+    events: [event({ id: 'evt_symlink_update', sessionId: 'sess_symlink_update' })]
+  });
+  await enqueueJob({ root, sessionId: 'sess_symlink_update', runtime: 'codex' });
+
+  const result = await runOneReviewJob({
+    root,
+    reviewer: async () => ({
+      raw: '{}',
+      parsed: {
+        summary: 'Unsafe update target.',
+        retrospective: {
+          outcome: 'completed',
+          quality: 'minor_issues',
+          findings: [
+            finding({
+              evidence: ['evt_symlink_update'],
+              action: {
+                type: 'update_knowledge',
+                confidence: 'high',
+                target: path.join(root, 'AGENTS.md'),
+                proposed_text: 'Project convention: do not leak symlink targets.'
+              }
+            })
+          ]
+        }
+      }
+    })
+  });
+
+  assert.equal(result.status, 'failed');
+  assert.match(result.error, /update_knowledge target must match a candidate/);
+  const paths = resolveSessionPaths({ root, sessionId: 'sess_symlink_update' });
+  await assert.rejects(fs.readFile(paths.retrospectivePath, 'utf8'), { code: 'ENOENT' });
 });
 
 test('runOneReviewJob does not write retrospective artifacts after losing its lease', async () => {
@@ -273,6 +313,59 @@ test('runOneReviewJob fails reviewer errors without rules fallback or notificati
   assert.match(await fs.readFile(paths.reviewerLogPath, 'utf8'), /reviewer exploded/);
   await assert.rejects(fs.readFile(paths.retrospectivePath, 'utf8'), { code: 'ENOENT' });
   assert.equal((await readJob({ root, jobId: 'job_sess_fail' })).status, 'failed');
+});
+
+test('runOneReviewJob marks failed when reviewer.log cannot be written', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-worker-'));
+  const paths = await writeSession(root, 'sess_unwritable_log', {
+    events: [event({ id: 'evt_unwritable_log', sessionId: 'sess_unwritable_log' })]
+  });
+  await fs.rm(paths.reviewerLogPath, { force: true, recursive: true });
+  await fs.mkdir(paths.reviewerLogPath);
+  await enqueueJob({ root, sessionId: 'sess_unwritable_log', runtime: 'codex' });
+
+  const result = await runOneReviewJob({
+    root,
+    reviewer: async () => {
+      throw new Error('reviewer exploded before log');
+    }
+  });
+
+  assert.equal(result.status, 'failed');
+  assert.match(result.error, /reviewer exploded before log/);
+  const job = await readJob({ root, jobId: 'job_sess_unwritable_log' });
+  assert.equal(job.status, 'failed');
+  assert.equal(job.lease_token, '');
+});
+
+test('runOneReviewJob does not write failure artifacts after losing its lease', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-worker-'));
+  await writeSession(root, 'sess_stale_failure', {
+    events: [event({ id: 'evt_stale_failure', sessionId: 'sess_stale_failure' })]
+  });
+  await enqueueJob({ root, sessionId: 'sess_stale_failure', runtime: 'codex' });
+  const servicePaths = resolveServicePaths({ root });
+
+  const result = await runOneReviewJob({
+    root,
+    reviewer: async () => {
+      const jobPath = path.join(servicePaths.jobsDir, 'job_sess_stale_failure.json');
+      const job = JSON.parse(await fs.readFile(jobPath, 'utf8'));
+      await fs.writeFile(jobPath, `${JSON.stringify({
+        ...job,
+        lease_token: 'new-owner-token',
+        lease_expires_at: new Date(Date.now() + 60000).toISOString()
+      }, null, 2)}\n`);
+      throw new Error('stale reviewer exploded');
+    }
+  });
+
+  assert.equal(result.status, 'failed');
+  assert.match(result.error, /stale reviewer exploded/);
+  const paths = resolveSessionPaths({ root, sessionId: 'sess_stale_failure' });
+  await assert.rejects(fs.readFile(paths.reviewerLogPath, 'utf8'), { code: 'ENOENT' });
+  await assert.rejects(fs.readFile(paths.retrospectivePath, 'utf8'), { code: 'ENOENT' });
+  await assert.rejects(fs.readFile(paths.retrospectiveMarkdownPath, 'utf8'), { code: 'ENOENT' });
 });
 
 test('runOneReviewJob returns nothing when there is no queued job', async () => {

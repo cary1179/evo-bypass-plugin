@@ -10,6 +10,15 @@ const DEFAULT_VIEWER = Object.freeze({
   openOnlyWhenSuggestions: true
 });
 
+const DEFAULT_SERVICE = Object.freeze({
+  enabled: true,
+  host: '127.0.0.1',
+  port: 8765,
+  idleTimeoutMs: 20 * 60 * 1000,
+  healthTimeoutMs: 250,
+  openBrowserOnKnowledge: true
+});
+
 const OPEN_MODES = new Set(['off', 'url', 'browser']);
 const REVIEWER_MODES = new Set(['rules', 'ai', 'auto']);
 const REVIEWER_FALLBACKS = new Set(['rules', 'none']);
@@ -44,6 +53,7 @@ export async function readBypassConfig({ root = process.cwd() } = {}) {
     knowledgeTarget: safeKnowledgeTarget({ root, configuredTarget: rawConfig.knowledgeTarget }),
     viewer: normalizeViewer(rawConfig.viewer),
     reviewer: normalizeReviewer(rawConfig.reviewer),
+    service: normalizeService(rawConfig.service),
     configError
   };
 }
@@ -70,6 +80,26 @@ export function shouldExposeViewer({ viewer, suggestionCount, actionCount }) {
     return false;
   }
   return true;
+}
+
+export function normalizeService(input) {
+  const service = isObject(input) ? input : {};
+  return {
+    enabled: typeof service.enabled === 'boolean' ? service.enabled : DEFAULT_SERVICE.enabled,
+    host: typeof service.host === 'string' && service.host.trim() ? service.host : DEFAULT_SERVICE.host,
+    port: Number.isInteger(service.port) && service.port > 0 && service.port <= 65535
+      ? service.port
+      : DEFAULT_SERVICE.port,
+    idleTimeoutMs: Number.isInteger(service.idleTimeoutMs) && service.idleTimeoutMs > 0
+      ? service.idleTimeoutMs
+      : DEFAULT_SERVICE.idleTimeoutMs,
+    healthTimeoutMs: Number.isInteger(service.healthTimeoutMs) && service.healthTimeoutMs > 0
+      ? service.healthTimeoutMs
+      : DEFAULT_SERVICE.healthTimeoutMs,
+    openBrowserOnKnowledge: typeof service.openBrowserOnKnowledge === 'boolean'
+      ? service.openBrowserOnKnowledge
+      : DEFAULT_SERVICE.openBrowserOnKnowledge
+  };
 }
 
 export function normalizeReviewer(input) {

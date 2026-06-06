@@ -36,6 +36,7 @@ function validateFinding({ root, finding, eventIds, candidateTargets }) {
   if (!finding || typeof finding !== 'object') {
     throw new Error('finding must be an object');
   }
+  validateRequiredString(finding.id, 'finding id');
   validateRequiredEnum(finding.category, CATEGORIES, 'finding category');
   validateRequiredEnum(finding.severity, SEVERITIES, 'finding severity');
   if (!Array.isArray(finding.evidence) || finding.evidence.length === 0) {
@@ -46,6 +47,8 @@ function validateFinding({ root, finding, eventIds, candidateTargets }) {
       throw new Error(`unknown evidence id: ${id}`);
     }
   }
+  validateRequiredString(finding.diagnosis, 'finding diagnosis');
+  validateRequiredString(finding.recommendation, 'finding recommendation');
 
   const action = finding.action;
   if (!action || typeof action !== 'object') {
@@ -100,6 +103,12 @@ function resolveTarget({ root, target }) {
 function validateRequiredEnum(value, allowed, name) {
   if (!allowed.has(value)) {
     throw new Error(`invalid ${name}`);
+  }
+}
+
+function validateRequiredString(value, name) {
+  if (typeof value !== 'string' || value.trim() === '') {
+    throw new Error(`${name} is required`);
   }
 }
 

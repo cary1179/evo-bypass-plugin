@@ -91,7 +91,78 @@ process.stdin.on('end', () => {
   assert.equal(logged.internal, '1');
   assert.equal(logged.entrypoint, 'evo-bypass-reviewer');
   assert.equal(logged.stdin, 'review this');
-  assert.deepEqual(logged.args, ['-p', '--output-format', 'json']);
+  assert.deepEqual(logged.args, [
+    '-p',
+    '--output-format',
+    'json',
+    '--input-format',
+    'text',
+    '--bare',
+    '--no-session-persistence',
+    '--no-chrome',
+    '--permission-mode',
+    'dontAsk',
+    '--tools',
+    '',
+    '--disallowed-tools',
+    'Bash,Edit,MultiEdit,Write,NotebookEdit,WebFetch,WebSearch,Task',
+    '--strict-mcp-config',
+    '--mcp-config',
+    '{}'
+  ]);
+});
+
+test('runReviewerCli parses Claude result envelopes with JSON model text', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-runner-'));
+  const fake = path.join(root, 'fake-claude-envelope.js');
+  await fs.writeFile(fake, `#!/usr/bin/env node
+console.log(JSON.stringify({
+  type: 'result',
+  subtype: 'success',
+  result: JSON.stringify({
+    summary: 'ok',
+    retrospective: { outcome: 'completed', quality: 'smooth', findings: [] }
+  })
+}));
+`);
+  await fs.chmod(fake, 0o755);
+
+  const result = await runReviewerCli({
+    root,
+    runtime: 'claude',
+    prompt: 'review this',
+    env: { ...process.env, EVO_BYPASS_CLAUDE_PATH: fake },
+    timeoutMs: 5000
+  });
+
+  assert.equal(result.parsed.retrospective.quality, 'smooth');
+});
+
+test('runReviewerCli parses Claude content envelopes with JSON text blocks', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-runner-'));
+  const fake = path.join(root, 'fake-claude-content.js');
+  await fs.writeFile(fake, `#!/usr/bin/env node
+console.log(JSON.stringify({
+  content: [{
+    type: 'text',
+    text: JSON.stringify({
+      summary: 'ok',
+      retrospective: { outcome: 'completed', quality: 'smooth', findings: [] }
+    })
+  }]
+}));
+`);
+  await fs.chmod(fake, 0o755);
+
+  const result = await runReviewerCli({
+    root,
+    runtime: 'claude',
+    prompt: 'review this',
+    env: { ...process.env, EVO_BYPASS_CLAUDE_PATH: fake },
+    timeoutMs: 5000
+  });
+
+  assert.equal(result.parsed.retrospective.quality, 'smooth');
 });
 
 test('runReviewerCli fails on non-json output', async () => {

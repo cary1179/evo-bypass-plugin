@@ -109,3 +109,50 @@ test('validateReviewerResult rejects invalid enum values', () => {
     candidates: []
   }), /invalid retrospective outcome/);
 });
+
+test('validateReviewerResult rejects findings missing required strings', () => {
+  assert.throws(() => validateReviewerResult({
+    root: '/tmp/repo',
+    parsed: {
+      session_id: 'sess_review',
+      retrospective: {
+        outcome: 'completed',
+        quality: 'minor_issues',
+        findings: [{
+          id: 'finding_missing_diagnosis',
+          category: 'knowledge',
+          severity: 'medium',
+          evidence: ['evt_1'],
+          diagnosis: '',
+          recommendation: 'Save it.',
+          action: { type: 'no_action', confidence: 'low' }
+        }]
+      }
+    },
+    events: [{ id: 'evt_1' }],
+    candidates: []
+  }), /finding diagnosis is required/);
+});
+
+test('validateReviewerResult rejects findings missing ids before normalization', () => {
+  assert.throws(() => validateReviewerResult({
+    root: '/tmp/repo',
+    parsed: {
+      session_id: 'sess_review',
+      retrospective: {
+        outcome: 'completed',
+        quality: 'minor_issues',
+        findings: [{
+          category: 'knowledge',
+          severity: 'medium',
+          evidence: ['evt_1'],
+          diagnosis: 'Reusable convention.',
+          recommendation: 'Save it.',
+          action: { type: 'no_action', confidence: 'low' }
+        }]
+      }
+    },
+    events: [{ id: 'evt_1' }],
+    candidates: []
+  }), /finding id is required/);
+});

@@ -3,6 +3,8 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 
+const CLAUDE_DISALLOWED_TOOLS = 'Bash,Edit,MultiEdit,Write,NotebookEdit,WebFetch,WebSearch,Task';
+
 export async function runReviewerCli({ root, runtime, prompt, env = process.env, timeoutMs = 180000 }) {
   if (runtime === 'codex') {
     return runCodex({ root, prompt, env, timeoutMs });
@@ -38,9 +40,27 @@ async function runCodex({ root, prompt, env, timeoutMs }) {
 
 async function runClaude({ root, prompt, env, timeoutMs }) {
   const command = env.EVO_BYPASS_CLAUDE_PATH || 'claude';
-  const args = ['-p', '--output-format', 'json'];
+  const args = [
+    '-p',
+    '--output-format',
+    'json',
+    '--input-format',
+    'text',
+    '--bare',
+    '--no-session-persistence',
+    '--no-chrome',
+    '--permission-mode',
+    'dontAsk',
+    '--tools',
+    '',
+    '--disallowed-tools',
+    CLAUDE_DISALLOWED_TOOLS,
+    '--strict-mcp-config',
+    '--mcp-config',
+    '{}'
+  ];
   const output = await runProcess({ command, args, input: prompt, cwd: root, env, timeoutMs });
-  return parseReviewerOutput(output.stdout);
+  return parseClaudeOutput(output.stdout);
 }
 
 function parseReviewerOutput(text) {
@@ -49,6 +69,70 @@ function parseReviewerOutput(text) {
   } catch {
     throw new Error('Reviewer output was not valid JSON');
   }
+}
+
+function parseClaudeOutput(text) {
+  const parsed = parseJsonText(text);
+  return { parsed: unwrapReviewerJson(parsed) };
+}
+
+function unwrapReviewerJson(value) {
+  if (hasRetrospectiveShape(value)) {
+    return value;
+  }
+
+  for (const candidate of claudeEnvelopeCandidates(value)) {
+    const unwrapped = parseCandidateJson(candidate);
+    if (hasRetrospectiveShape(unwrapped)) {
+      return unwrapped;
+    }
+  }
+
+  return value;
+}
+
+function claudeEnvelopeCandidates(value) {
+  if (!value || typeof value !== 'object') {
+    return [];
+  }
+
+  const candidates = [value.result, value.text, value.output_text];
+  const content = value.content || value.message?.content;
+  if (typeof content === 'string') {
+    candidates.push(content);
+  }
+  if (Array.isArray(content)) {
+    for (const item of content) {
+      if (typeof item === 'string') {
+        candidates.push(item);
+      } else if (item && typeof item === 'object') {
+        candidates.push(item.text, item.content);
+      }
+    }
+  }
+  return candidates.filter((candidate) => candidate !== undefined && candidate !== null);
+}
+
+function parseCandidateJson(candidate) {
+  if (hasRetrospectiveShape(candidate)) {
+    return candidate;
+  }
+  if (typeof candidate !== 'string') {
+    return candidate;
+  }
+  return parseJsonText(candidate);
+}
+
+function parseJsonText(text) {
+  try {
+    return JSON.parse(String(text || '').trim());
+  } catch {
+    throw new Error('Reviewer output was not valid JSON');
+  }
+}
+
+function hasRetrospectiveShape(value) {
+  return Boolean(value && typeof value === 'object' && value.retrospective && typeof value.retrospective === 'object');
 }
 
 function runProcess({ command, args, input, cwd, env, timeoutMs }) {

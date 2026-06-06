@@ -57,7 +57,7 @@ async function runClaude({ root, prompt, env, timeoutMs }) {
     CLAUDE_DISALLOWED_TOOLS,
     '--strict-mcp-config',
     '--mcp-config',
-    '{}'
+    '{"mcpServers":{}}'
   ];
   const output = await runProcess({ command, args, input: prompt, cwd: root, env, timeoutMs });
   return parseClaudeOutput(output.stdout);

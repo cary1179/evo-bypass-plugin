@@ -108,7 +108,7 @@ process.stdin.on('end', () => {
     'Bash,Edit,MultiEdit,Write,NotebookEdit,WebFetch,WebSearch,Task',
     '--strict-mcp-config',
     '--mcp-config',
-    '{}'
+    '{"mcpServers":{}}'
   ]);
 });
 

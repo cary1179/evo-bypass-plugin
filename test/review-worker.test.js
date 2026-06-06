@@ -255,6 +255,112 @@ test('runOneReviewJob rejects update_knowledge for outside symlink targets', asy
   await assert.rejects(fs.readFile(paths.retrospectivePath, 'utf8'), { code: 'ENOENT' });
 });
 
+test('runOneReviewJob keeps missing in-root scoped AGENTS.md candidates updateable', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-worker-'));
+  await fs.mkdir(path.join(root, 'pkg'));
+  await writeSession(root, 'sess_missing_in_root', {
+    events: [
+      event({
+        id: 'evt_missing_in_root',
+        sessionId: 'sess_missing_in_root',
+        paths: ['pkg/file.js'],
+        signals: ['project_convention']
+      })
+    ]
+  });
+  await enqueueJob({ root, sessionId: 'sess_missing_in_root', runtime: 'codex' });
+  let candidate;
+
+  const result = await runOneReviewJob({
+    root,
+    reviewer: async ({ payload }) => {
+      candidate = payload.candidates[0];
+      return {
+        raw: '{}',
+        parsed: {
+          summary: 'Found scoped convention.',
+          retrospective: {
+            outcome: 'completed',
+            quality: 'minor_issues',
+            findings: [
+              finding({
+                evidence: ['evt_missing_in_root'],
+                action: {
+                  type: 'update_knowledge',
+                  confidence: 'high',
+                  target: candidate.target,
+                  proposed_text: 'Project convention: keep scoped knowledge local.'
+                }
+              })
+            ]
+          }
+        }
+      };
+    }
+  });
+
+  assert.equal(result.status, 'succeeded');
+  assert.equal(candidate.target, path.join(root, 'pkg', 'AGENTS.md'));
+  assert.equal(candidate.relative_target, path.join('pkg', 'AGENTS.md'));
+  assert.equal(candidate.target_exists, false);
+  const paths = resolveSessionPaths({ root, sessionId: 'sess_missing_in_root' });
+  const retrospective = JSON.parse(await fs.readFile(paths.retrospectivePath, 'utf8'));
+  assert.equal(retrospective.retrospective.findings[0].action.target, path.join(root, 'pkg', 'AGENTS.md'));
+});
+
+test('runOneReviewJob omits missing AGENTS.md under symlinked outside directory', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-worker-'));
+  const outsideDir = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-outside-'));
+  await fs.symlink(outsideDir, path.join(root, 'linked'));
+  const unsafeTarget = path.join(root, 'linked', 'AGENTS.md');
+  await writeSession(root, 'sess_missing_symlink_parent', {
+    events: [
+      event({
+        id: 'evt_missing_symlink_parent',
+        sessionId: 'sess_missing_symlink_parent',
+        paths: ['linked/file.js'],
+        signals: ['project_convention']
+      })
+    ]
+  });
+  await enqueueJob({ root, sessionId: 'sess_missing_symlink_parent', runtime: 'codex' });
+  let candidates;
+
+  const result = await runOneReviewJob({
+    root,
+    reviewer: async ({ payload }) => {
+      candidates = payload.candidates;
+      return {
+        raw: '{}',
+        parsed: {
+          summary: 'Unsafe scoped target.',
+          retrospective: {
+            outcome: 'completed',
+            quality: 'minor_issues',
+            findings: [
+              finding({
+                evidence: ['evt_missing_symlink_parent'],
+                action: {
+                  type: 'update_knowledge',
+                  confidence: 'high',
+                  target: unsafeTarget,
+                  proposed_text: 'Project convention: do not write through symlink parents.'
+                }
+              })
+            ]
+          }
+        }
+      };
+    }
+  });
+
+  assert.deepEqual(candidates, []);
+  assert.equal(result.status, 'failed');
+  assert.match(result.error, /update_knowledge target must match a candidate/);
+  const paths = resolveSessionPaths({ root, sessionId: 'sess_missing_symlink_parent' });
+  await assert.rejects(fs.readFile(paths.retrospectivePath, 'utf8'), { code: 'ENOENT' });
+});
+
 test('runOneReviewJob does not write retrospective artifacts after losing its lease', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-worker-'));
   await writeSession(root, 'sess_stale', {

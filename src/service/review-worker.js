@@ -158,7 +158,7 @@ async function safeTargetInfo({ root, filePath }) {
   try {
     lstat = await fs.lstat(targetPath);
   } catch (error) {
-    if (error.code === 'ENOENT') return { safe: true, exists: false };
+    if (error.code === 'ENOENT') return missingTargetInfo({ rootPath, targetPath });
     throw error;
   }
   if (!lstat.isFile() && !lstat.isSymbolicLink()) {
@@ -169,7 +169,7 @@ async function safeTargetInfo({ root, filePath }) {
   try {
     realPath = await fs.realpath(targetPath);
   } catch (error) {
-    if (error.code === 'ENOENT') return { safe: true, exists: false };
+    if (error.code === 'ENOENT') return missingTargetInfo({ rootPath, targetPath });
     throw error;
   }
   if (!isInsideRoot({ rootPath, targetPath: realPath })) {
@@ -178,6 +178,35 @@ async function safeTargetInfo({ root, filePath }) {
 
   const stat = await fs.stat(realPath);
   return { safe: stat.isFile(), exists: stat.isFile(), realPath };
+}
+
+async function missingTargetInfo({ rootPath, targetPath }) {
+  const parentPath = await nearestExistingParent(targetPath);
+  if (!parentPath) {
+    return { safe: false, exists: false };
+  }
+
+  const realParentPath = await fs.realpath(parentPath);
+  return {
+    safe: isInsideRoot({ rootPath, targetPath: realParentPath }),
+    exists: false
+  };
+}
+
+async function nearestExistingParent(targetPath) {
+  let current = path.dirname(targetPath);
+  while (current && current !== path.dirname(current)) {
+    try {
+      const stat = await fs.stat(current);
+      return stat.isDirectory() ? current : undefined;
+    } catch (error) {
+      if (error.code !== 'ENOENT') {
+        throw error;
+      }
+    }
+    current = path.dirname(current);
+  }
+  return undefined;
 }
 
 function isInsideRoot({ rootPath, targetPath }) {

@@ -44,7 +44,7 @@
 - Test: `test/service-paths.test.js`
 - Test: `test/collect-event.test.js`
 
-- [ ] **Step 1: Write failing tests for service paths and config**
+- [x] **Step 1: Write failing tests for service paths and config**
 
 Add `test/service-paths.test.js`:
 
@@ -103,7 +103,7 @@ test('collectEvent skips internal reviewer invocations', async () => {
 });
 ```
 
-- [ ] **Step 2: Run tests and verify they fail**
+- [x] **Step 2: Run tests and verify they fail**
 
 Run:
 
@@ -113,7 +113,7 @@ node --test test/service-paths.test.js test/config.test.js test/collect-event.te
 
 Expected: failures for missing `service-paths.js`, missing `config.service`, and `collectEvent` not accepting `env`.
 
-- [ ] **Step 3: Implement service paths**
+- [x] **Step 3: Implement service paths**
 
 Create `src/core/service-paths.js`:
 
@@ -137,7 +137,7 @@ export function resolveServicePaths({ root = process.cwd() } = {}) {
 }
 ```
 
-- [ ] **Step 4: Add service config normalization**
+- [x] **Step 4: Add service config normalization**
 
 Modify `src/core/config.js`:
 
@@ -180,7 +180,7 @@ export function normalizeService(input) {
 }
 ```
 
-- [ ] **Step 5: Add internal guard to collector**
+- [x] **Step 5: Add internal guard to collector**
 
 Modify `src/collect-event.js` signature:
 
@@ -193,7 +193,7 @@ export async function collectEvent({ root = process.cwd(), payload, env = proces
 }
 ```
 
-- [ ] **Step 6: Run tests and verify they pass**
+- [x] **Step 6: Run tests and verify they pass**
 
 Run:
 
@@ -203,7 +203,7 @@ node --test test/service-paths.test.js test/config.test.js test/collect-event.te
 
 Expected: PASS.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add src/core/service-paths.js src/core/config.js src/collect-event.js test/service-paths.test.js test/config.test.js test/collect-event.test.js
@@ -223,7 +223,7 @@ git commit -m "feat: add async service foundations"
 - Test: `test/service-client.test.js`
 - Test: `test/service-hook-cli.test.js`
 
-- [ ] **Step 1: Write failing service client tests**
+- [x] **Step 1: Write failing service client tests**
 
 Create `test/service-client.test.js`:
 
@@ -299,7 +299,7 @@ function close(server) {
 }
 ```
 
-- [ ] **Step 2: Write failing CLI tests**
+- [x] **Step 2: Write failing CLI tests**
 
 Create `test/service-hook-cli.test.js`:
 
@@ -369,7 +369,7 @@ test('enqueue-review-job posts job when service is healthy', async () => {
 });
 ```
 
-- [ ] **Step 3: Run tests and verify they fail**
+- [x] **Step 3: Run tests and verify they fail**
 
 Run:
 
@@ -379,7 +379,7 @@ node --test test/service-client.test.js test/service-hook-cli.test.js
 
 Expected: missing modules/scripts.
 
-- [ ] **Step 4: Implement service client**
+- [x] **Step 4: Implement service client**
 
 Create `src/service/service-client.js`:
 
@@ -457,7 +457,7 @@ export function startServiceDetached({ root, scriptPath, env = process.env }) {
 }
 ```
 
-- [ ] **Step 5: Implement enqueue hook script**
+- [x] **Step 5: Implement enqueue hook script**
 
 Create `scripts/enqueue-review-job.js`:
 
@@ -522,7 +522,7 @@ function emitContinue() {
 }
 ```
 
-- [ ] **Step 6: Implement session start script**
+- [x] **Step 6: Implement session start script**
 
 Create `scripts/session-start-service.js`:
 
@@ -585,7 +585,7 @@ function emitContinue() {
 }
 ```
 
-- [ ] **Step 7: Update hook configs**
+- [x] **Step 7: Update hook configs**
 
 Modify `hooks/codex-hooks.json`:
 
@@ -621,7 +621,7 @@ Modify `hooks/codex-hooks.json`:
 
 Make the equivalent change in `hooks/claude-hooks.json`: keep existing collection hooks, add `session-start-service.js --runtime claude` at session start if the file has a matching lifecycle, and replace synchronous Stop review with `enqueue-review-job.js --runtime claude`.
 
-- [ ] **Step 8: Run tests**
+- [x] **Step 8: Run tests**
 
 Run:
 
@@ -631,7 +631,7 @@ node --test test/service-client.test.js test/service-hook-cli.test.js
 
 Expected: PASS.
 
-- [ ] **Step 9: Commit**
+- [x] **Step 9: Commit**
 
 ```bash
 git add src/service/service-client.js scripts/session-start-service.js scripts/enqueue-review-job.js hooks/codex-hooks.json hooks/claude-hooks.json test/service-client.test.js test/service-hook-cli.test.js
@@ -646,7 +646,7 @@ git commit -m "feat: enqueue async review jobs from hooks"
 - Create: `src/service/job-store.js`
 - Test: `test/job-store.test.js`
 
-- [ ] **Step 1: Write failing job store tests**
+- [x] **Step 1: Write failing job store tests**
 
 Create `test/job-store.test.js`:
 
@@ -713,7 +713,7 @@ test('resetStaleRunningJobs returns expired running jobs to queued', async () =>
 });
 ```
 
-- [ ] **Step 2: Run test and verify it fails**
+- [x] **Step 2: Run test and verify it fails**
 
 Run:
 
@@ -723,7 +723,7 @@ node --test test/job-store.test.js
 
 Expected: missing `job-store.js`.
 
-- [ ] **Step 3: Implement job store**
+- [x] **Step 3: Implement job store**
 
 Create `src/service/job-store.js`:
 
@@ -850,7 +850,7 @@ function jobFile(jobsDir, jobId) {
 }
 ```
 
-- [ ] **Step 4: Run tests**
+- [x] **Step 4: Run tests**
 
 Run:
 
@@ -860,7 +860,7 @@ node --test test/job-store.test.js
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/service/job-store.js test/job-store.test.js
@@ -878,7 +878,7 @@ git commit -m "feat: add async review job store"
 - Test: `test/reviewer-runner.test.js`
 - Test: `test/reviewer-validation.test.js`
 
-- [ ] **Step 1: Write validation tests**
+- [x] **Step 1: Write validation tests**
 
 Create `test/reviewer-validation.test.js`:
 
@@ -975,7 +975,7 @@ test('validateReviewerResult rejects update targets outside candidates', () => {
 });
 ```
 
-- [ ] **Step 2: Write runner tests with fake CLI**
+- [x] **Step 2: Write runner tests with fake CLI**
 
 Create `test/reviewer-runner.test.js`:
 
@@ -1034,7 +1034,7 @@ console.log('not json');
 });
 ```
 
-- [ ] **Step 3: Run tests and verify they fail**
+- [x] **Step 3: Run tests and verify they fail**
 
 Run:
 
@@ -1044,7 +1044,7 @@ node --test test/reviewer-validation.test.js test/reviewer-runner.test.js
 
 Expected: missing modules.
 
-- [ ] **Step 4: Implement reviewer prompt**
+- [x] **Step 4: Implement reviewer prompt**
 
 Create `src/service/reviewer-prompt.js`:
 
@@ -1071,7 +1071,7 @@ ${JSON.stringify(payload, null, 2)}
 }
 ```
 
-- [ ] **Step 5: Implement reviewer validation**
+- [x] **Step 5: Implement reviewer validation**
 
 Create `src/service/reviewer-validation.js`:
 
@@ -1136,7 +1136,7 @@ function enumOrDefault(value, allowed, fallback) {
 }
 ```
 
-- [ ] **Step 6: Implement reviewer runner**
+- [x] **Step 6: Implement reviewer runner**
 
 Create `src/service/reviewer-runner.js`:
 
@@ -1211,7 +1211,7 @@ function runProcess({ command, args, input, cwd, env, timeoutMs }) {
 }
 ```
 
-- [ ] **Step 7: Run tests**
+- [x] **Step 7: Run tests**
 
 Run:
 
@@ -1221,7 +1221,7 @@ node --test test/reviewer-validation.test.js test/reviewer-runner.test.js
 
 Expected: PASS.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add src/service/reviewer-prompt.js src/service/reviewer-runner.js src/service/reviewer-validation.js test/reviewer-runner.test.js test/reviewer-validation.test.js
@@ -1237,7 +1237,7 @@ git commit -m "feat: add async reviewer runner"
 - Create: `src/service/notifier.js`
 - Test: `test/review-worker.test.js`
 
-- [ ] **Step 1: Write failing worker test**
+- [x] **Step 1: Write failing worker test**
 
 Create `test/review-worker.test.js`:
 
@@ -1324,7 +1324,7 @@ test('runOneReviewJob fails job on reviewer error without fallback', async () =>
 });
 ```
 
-- [ ] **Step 2: Run test and verify it fails**
+- [x] **Step 2: Run test and verify it fails**
 
 Run:
 
@@ -1334,7 +1334,7 @@ node --test test/review-worker.test.js
 
 Expected: missing `review-worker.js`.
 
-- [ ] **Step 3: Implement notifier**
+- [x] **Step 3: Implement notifier**
 
 Create `src/service/notifier.js`:
 
@@ -1361,7 +1361,7 @@ function openUrl(url) {
 }
 ```
 
-- [ ] **Step 4: Implement review worker**
+- [x] **Step 4: Implement review worker**
 
 Create `src/service/review-worker.js`:
 
@@ -1516,7 +1516,7 @@ async function readPreview(filePath) {
 }
 ```
 
-- [ ] **Step 5: Run test**
+- [x] **Step 5: Run test**
 
 Run:
 
@@ -1526,7 +1526,7 @@ node --test test/review-worker.test.js
 
 Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/service/review-worker.js src/service/notifier.js test/review-worker.test.js
@@ -1543,7 +1543,7 @@ git commit -m "feat: process async review jobs"
 - Modify: `src/viewer/session-store.js`
 - Test: `test/service-server.test.js`
 
-- [ ] **Step 1: Write failing service server tests**
+- [x] **Step 1: Write failing service server tests**
 
 Create `test/service-server.test.js`:
 
@@ -1599,7 +1599,7 @@ async function getJson(url) {
 }
 ```
 
-- [ ] **Step 2: Run test and verify it fails**
+- [x] **Step 2: Run test and verify it fails**
 
 Run:
 
@@ -1609,7 +1609,7 @@ node --test test/service-server.test.js
 
 Expected: missing `service/server.js`.
 
-- [ ] **Step 3: Implement service server**
+- [x] **Step 3: Implement service server**
 
 Create `src/service/server.js`:
 
@@ -1721,7 +1721,7 @@ async function writeServiceFiles({ root, url }) {
 }
 ```
 
-- [ ] **Step 4: Implement service CLI**
+- [x] **Step 4: Implement service CLI**
 
 Create `scripts/evo-bypassd.js`:
 
@@ -1753,7 +1753,7 @@ function parseArgs(argv) {
 }
 ```
 
-- [ ] **Step 5: Run tests**
+- [x] **Step 5: Run tests**
 
 Run:
 
@@ -1771,7 +1771,7 @@ export async function applyEditedApprovedUpdate() {
 
 Then rerun and expect PASS for health/jobs/UI routes.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/service/server.js scripts/evo-bypassd.js src/viewer/session-store.js test/service-server.test.js src/service/apply-edited-update.js
@@ -1788,7 +1788,7 @@ git commit -m "feat: serve async review service APIs"
 - Test: `test/apply-approved-update.test.js`
 - Test: `test/service-apply.test.js`
 
-- [ ] **Step 1: Add failing test for edited text**
+- [x] **Step 1: Add failing test for edited text**
 
 Append to `test/apply-approved-update.test.js`:
 
@@ -1836,7 +1836,7 @@ test('applyApprovedUpdate uses edited action proposed_text from approval', async
 });
 ```
 
-- [ ] **Step 2: Create service apply endpoint test**
+- [x] **Step 2: Create service apply endpoint test**
 
 Create `test/service-apply.test.js`:
 
@@ -1893,7 +1893,7 @@ test('applyEditedApprovedUpdate writes approval and applies edited selected acti
 });
 ```
 
-- [ ] **Step 3: Run tests and verify they fail**
+- [x] **Step 3: Run tests and verify they fail**
 
 Run:
 
@@ -1903,7 +1903,7 @@ node --test test/apply-approved-update.test.js test/service-apply.test.js
 
 Expected: edited text not used and missing service apply module.
 
-- [ ] **Step 4: Modify applyApprovedUpdate to use edited text**
+- [x] **Step 4: Modify applyApprovedUpdate to use edited text**
 
 In `src/apply-approved-update.js`, after reading approval, pass approval into validation mapping:
 
@@ -1928,7 +1928,7 @@ function withEditedText({ suggestion, approval }) {
 }
 ```
 
-- [ ] **Step 5: Implement service apply wrapper**
+- [x] **Step 5: Implement service apply wrapper**
 
 Create `src/service/apply-edited-update.js`:
 
@@ -1968,7 +1968,7 @@ function normalizeEditedActions(input) {
 }
 ```
 
-- [ ] **Step 6: Run tests**
+- [x] **Step 6: Run tests**
 
 Run:
 
@@ -1978,7 +1978,7 @@ node --test test/apply-approved-update.test.js test/service-apply.test.js test/s
 
 Expected: PASS.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add src/apply-approved-update.js src/service/apply-edited-update.js test/apply-approved-update.test.js test/service-apply.test.js
@@ -1996,7 +1996,7 @@ git commit -m "feat: apply edited knowledge approvals"
 - Test: `test/viewer-server.test.js`
 - Test: `test/service-server.test.js`
 
-- [ ] **Step 1: Add session store job status test**
+- [x] **Step 1: Add session store job status test**
 
 Append to `test/viewer-server.test.js`:
 
@@ -2028,7 +2028,7 @@ Import `getSessionDetail` in the test if needed:
 import { getSessionDetail } from '../src/viewer/session-store.js';
 ```
 
-- [ ] **Step 2: Run test and verify it fails**
+- [x] **Step 2: Run test and verify it fails**
 
 Run:
 
@@ -2038,7 +2038,7 @@ node --test test/viewer-server.test.js
 
 Expected: `detail.job` is missing.
 
-- [ ] **Step 3: Add job status to session store**
+- [x] **Step 3: Add job status to session store**
 
 Modify `src/viewer/session-store.js`:
 
@@ -2077,7 +2077,7 @@ In `toSummary`, include:
 job_status: detail.job?.status || 'none',
 ```
 
-- [ ] **Step 4: Replace viewer static UI with productionized prototype**
+- [x] **Step 4: Replace viewer static UI with productionized prototype**
 
 Use `prototype/async-review-service/index.html` as the visual source, but replace hard-coded arrays with existing API calls:
 
@@ -2122,7 +2122,7 @@ Keep the prototype's layout and visual hierarchy:
 - center review timeline/evidence
 - right editable approval drawer
 
-- [ ] **Step 5: Run server tests**
+- [x] **Step 5: Run server tests**
 
 Run:
 
@@ -2132,7 +2132,7 @@ node --test test/viewer-server.test.js test/service-server.test.js
 
 Expected: PASS.
 
-- [ ] **Step 6: Manually verify UI**
+- [x] **Step 6: Manually verify UI**
 
 Run:
 
@@ -2148,7 +2148,7 @@ http://127.0.0.1:8765/sessions
 
 Expected: UI renders the async review console style and no console errors are visible.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add src/viewer/static/index.html src/viewer/session-store.js src/viewer/server.js test/viewer-server.test.js test/service-server.test.js
@@ -2165,7 +2165,7 @@ git commit -m "feat: add async review approval UI"
 - Modify: `test/install-hooks.test.js`
 - Create: `test/e2e-async-review-service.test.js`
 
-- [ ] **Step 1: Write e2e service test**
+- [x] **Step 1: Write e2e service test**
 
 Create `test/e2e-async-review-service.test.js`:
 
@@ -2200,7 +2200,7 @@ test('async service accepts a session job and exposes session detail', async () 
 });
 ```
 
-- [ ] **Step 2: Update installer tests for new hook scripts**
+- [x] **Step 2: Update installer tests for new hook scripts**
 
 Modify `test/install-hooks.test.js` expected hook commands to include:
 
@@ -2211,7 +2211,7 @@ scripts/enqueue-review-job.js
 
 Keep assertions that existing hooks are preserved and duplicate installs are idempotent.
 
-- [ ] **Step 3: Update README**
+- [x] **Step 3: Update README**
 
 Add a section:
 
@@ -2230,7 +2230,7 @@ Evo Bypass runs review work outside the Stop hook.
 If the service is unhealthy at Stop time, review enqueue is skipped and the main session is not blocked.
 ```
 
-- [ ] **Step 4: Run full tests**
+- [x] **Step 4: Run full tests**
 
 Run:
 
@@ -2240,7 +2240,7 @@ node --test
 
 Expected: PASS.
 
-- [ ] **Step 5: Run smoke check for service CLI**
+- [x] **Step 5: Run smoke check for service CLI**
 
 Run:
 
@@ -2256,7 +2256,7 @@ curl -sf http://127.0.0.1:8765/api/health
 
 Expected JSON contains `"name": "evo-bypassd"`.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add README.md scripts/install-hooks.js test/install-hooks.test.js test/e2e-async-review-service.test.js

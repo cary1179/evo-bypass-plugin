@@ -92,7 +92,7 @@ The Stop hook response stays short because it only enqueues work. Review details
 
 For Codex, the Stop hook emits valid JSON with `continue` set to `true` and `suppressOutput` set to `true`, so review work never blocks the main agent session.
 
-No-update sessions return:
+Legacy manual `scripts/review-session.js` no-update runs return:
 
 ```text
 本次任务复盘无待处理动作。
@@ -191,8 +191,10 @@ at:
 ```
 
 Targets must stay inside the workspace. Unsafe paths are ignored and the automatic `AGENTS.md` router is used instead.
-## Configure AI Review
-By default, Evo Bypass uses the local rules reviewer. To enable an OpenAI-compatible AI reviewer, add `reviewer.provider` to `.bypass/config.json`:
+## Configure Legacy Manual AI Review
+This section applies only to legacy/manual `scripts/review-session.js` runs or old synchronous hook setups. The installed async service hooks do not use this provider configuration: async reviews invoke local `codex exec` or `claude -p`, do not use an OpenAI-compatible provider, and mark jobs `failed` instead of falling back to rules when the local reviewer runtime fails.
+
+For legacy/manual review runs, Evo Bypass uses the local rules reviewer by default. To enable an OpenAI-compatible AI reviewer for that path, add `reviewer.provider` to `.bypass/config.json`:
 
 ```json
 {
@@ -210,4 +212,4 @@ By default, Evo Bypass uses the local rules reviewer. To enable an OpenAI-compat
 }
 ```
 
-`apiKey` is also supported inside `provider`, but `apiKeyEnv` is recommended so secrets do not live in the repository. If the AI request fails and `fallback` is `rules`, Evo Bypass falls back to the deterministic rules reviewer.
+`apiKey` is also supported inside `provider`, but `apiKeyEnv` is recommended so secrets do not live in the repository. In the legacy/manual path only, if the AI request fails and `fallback` is `rules`, Evo Bypass falls back to the deterministic rules reviewer.

@@ -150,6 +150,46 @@ test('mergeHookConfig migrates old Claude review hook to async enqueue hook', ()
   assert.equal(merged.hooks.Stop[0].hooks[0].asyncRewake, undefined);
 });
 
+test('mergeHookConfig migrates relative old Claude review hook to async enqueue hook', () => {
+  const existing = {
+    hooks: {
+      Stop: [
+        {
+          hooks: [
+            {
+              type: 'command',
+              command: 'node scripts/review-session.js "$CLAUDE_SESSION_ID"',
+              asyncRewake: true,
+            },
+          ],
+        },
+      ],
+    },
+  };
+  const incoming = {
+    hooks: {
+      Stop: [
+        {
+          hooks: [
+            {
+              type: 'command',
+              command: 'node "/repo/scripts/enqueue-review-job.js" --runtime claude',
+              timeout: 5,
+            },
+          ],
+        },
+      ],
+    },
+  };
+
+  const merged = mergeHookConfig(existing, incoming);
+
+  assert.equal(merged.hooks.Stop[0].hooks.length, 1);
+  assert.equal(merged.hooks.Stop[0].hooks[0].command, 'node "/repo/scripts/enqueue-review-job.js" --runtime claude');
+  assert.equal(merged.hooks.Stop[0].hooks[0].timeout, 5);
+  assert.equal(merged.hooks.Stop[0].hooks[0].asyncRewake, undefined);
+});
+
 test('hook templates install async service start and enqueue commands for Codex and Claude', async () => {
   for (const runtime of ['codex', 'claude']) {
     const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), `evo-bypass-${runtime}-template-hooks-`));

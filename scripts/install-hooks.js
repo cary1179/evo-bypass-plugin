@@ -173,8 +173,10 @@ function commandIdentity(command) {
     return '';
   }
   const withoutLegacySessionArg = command.replace(/\s+["']?\$CLAUDE_SESSION_ID["']?$/, '');
-  const normalizedScript = withoutLegacySessionArg.replace(/\/scripts\/review-session\.js/g, '/scripts/enqueue-review-job.js');
-  if (normalizedScript.includes('/scripts/enqueue-review-job.js') && !/\s--runtime\s+/.test(normalizedScript)) {
+  const normalizedScript = withoutLegacySessionArg
+    .replace(/(["']?)(?:[^\s"']+\/)?scripts\/review-session\.js\1/g, 'scripts/enqueue-review-job.js')
+    .replace(/(["']?)(?:[^\s"']+\/)?scripts\/enqueue-review-job\.js\1/g, 'scripts/enqueue-review-job.js');
+  if (normalizedScript.includes('scripts/enqueue-review-job.js') && !/\s--runtime\s+/.test(normalizedScript)) {
     return `${normalizedScript} --runtime claude`;
   }
   return normalizedScript;

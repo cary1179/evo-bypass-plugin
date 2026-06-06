@@ -8,13 +8,16 @@ const SEVERITIES = new Set(['low', 'medium', 'high']);
 const ACTION_TYPES = new Set(['update_knowledge', 'create_skill', 'improve_code', 'adjust_agent_usage', 'fix_environment', 'no_action']);
 const CONFIDENCES = new Set(['low', 'medium', 'high']);
 
-export function validateReviewerResult({ root, parsed, events = [], candidates = [] }) {
+export function validateReviewerResult({ root, sessionId, parsed, events = [], candidates = [] }) {
   if (!Array.isArray(parsed?.retrospective?.findings)) {
     throw new Error('reviewer result must include retrospective.findings array');
   }
 
-  validateOptionalEnum(parsed.retrospective.outcome, OUTCOMES, 'retrospective outcome');
-  validateOptionalEnum(parsed.retrospective.quality, QUALITIES, 'retrospective quality');
+  const resultSessionId = parsed.session_id || parsed.sessionId || sessionId;
+  validateRequiredString(resultSessionId, 'sessionId');
+  validateRequiredString(parsed.summary, 'summary');
+  validateRequiredEnum(parsed.retrospective.outcome, OUTCOMES, 'retrospective outcome');
+  validateRequiredEnum(parsed.retrospective.quality, QUALITIES, 'retrospective quality');
 
   const eventIds = new Set(events.map((event) => event?.id).filter((id) => typeof id === 'string' && id));
   const candidateTargets = new Set(candidates.map((candidate) => candidate?.target).filter((target) => typeof target === 'string' && target));
@@ -24,7 +27,7 @@ export function validateReviewerResult({ root, parsed, events = [], candidates =
   });
 
   return normalizeRetrospectiveResult({
-    sessionId: parsed.session_id || parsed.sessionId || 'unknown',
+    sessionId: resultSessionId,
     summary: parsed.summary,
     outcome: parsed.retrospective.outcome,
     quality: parsed.retrospective.quality,
@@ -101,6 +104,9 @@ function resolveTarget({ root, target }) {
 }
 
 function validateRequiredEnum(value, allowed, name) {
+  if (value === undefined) {
+    throw new Error(`${name} is required`);
+  }
   if (!allowed.has(value)) {
     throw new Error(`invalid ${name}`);
   }

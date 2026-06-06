@@ -41,11 +41,91 @@ test('validateReviewerResult accepts update_knowledge with known evidence and ca
   assert.equal(result.retrospective.findings[0].action.target, target);
 });
 
+test('validateReviewerResult accepts job-provided session id for async reviewer output', () => {
+  const result = validateReviewerResult({
+    root: '/tmp/repo',
+    sessionId: 'sess_from_job',
+    parsed: {
+      summary: 'No durable findings.',
+      retrospective: {
+        outcome: 'completed',
+        quality: 'smooth',
+        findings: []
+      }
+    },
+    events: [],
+    candidates: []
+  });
+
+  assert.equal(result.session_id, 'sess_from_job');
+  assert.equal(result.summary, 'No durable findings.');
+  assert.deepEqual(result.retrospective.findings, []);
+});
+
+test('validateReviewerResult rejects missing required top-level fields', () => {
+  assert.throws(() => validateReviewerResult({
+    root: '/tmp/repo',
+    sessionId: 'sess_review',
+    parsed: {
+      retrospective: { findings: [] }
+    },
+    events: [],
+    candidates: []
+  }), /summary is required/);
+});
+
+test('validateReviewerResult rejects missing required retrospective enums', () => {
+  assert.throws(() => validateReviewerResult({
+    root: '/tmp/repo',
+    parsed: {
+      session_id: 'sess_review',
+      summary: 'No durable findings.',
+      retrospective: {
+        quality: 'smooth',
+        findings: []
+      }
+    },
+    events: [],
+    candidates: []
+  }), /retrospective outcome is required/);
+
+  assert.throws(() => validateReviewerResult({
+    root: '/tmp/repo',
+    parsed: {
+      session_id: 'sess_review',
+      summary: 'No durable findings.',
+      retrospective: {
+        outcome: 'completed',
+        findings: []
+      }
+    },
+    events: [],
+    candidates: []
+  }), /retrospective quality is required/);
+});
+
+test('validateReviewerResult rejects missing session id unless supplied by caller', () => {
+  assert.throws(() => validateReviewerResult({
+    root: '/tmp/repo',
+    parsed: {
+      summary: 'No durable findings.',
+      retrospective: {
+        outcome: 'completed',
+        quality: 'smooth',
+        findings: []
+      }
+    },
+    events: [],
+    candidates: []
+  }), /sessionId is required/);
+});
+
 test('validateReviewerResult rejects unknown evidence ids', () => {
   assert.throws(() => validateReviewerResult({
     root: '/tmp/repo',
     parsed: {
       session_id: 'sess_review',
+      summary: 'Malformed reviewer result.',
       retrospective: {
         outcome: 'completed',
         quality: 'minor_issues',
@@ -70,6 +150,7 @@ test('validateReviewerResult rejects update targets outside candidates', () => {
     root: '/tmp/repo',
     parsed: {
       session_id: 'sess_review',
+      summary: 'Malformed reviewer result.',
       retrospective: {
         outcome: 'completed',
         quality: 'minor_issues',
@@ -99,6 +180,7 @@ test('validateReviewerResult rejects invalid enum values', () => {
     root: '/tmp/repo',
     parsed: {
       session_id: 'sess_review',
+      summary: 'Malformed reviewer result.',
       retrospective: {
         outcome: 'done',
         quality: 'smooth',
@@ -115,6 +197,7 @@ test('validateReviewerResult rejects findings missing required strings', () => {
     root: '/tmp/repo',
     parsed: {
       session_id: 'sess_review',
+      summary: 'Malformed reviewer result.',
       retrospective: {
         outcome: 'completed',
         quality: 'minor_issues',
@@ -139,6 +222,7 @@ test('validateReviewerResult rejects findings missing ids before normalization',
     root: '/tmp/repo',
     parsed: {
       session_id: 'sess_review',
+      summary: 'Malformed reviewer result.',
       retrospective: {
         outcome: 'completed',
         quality: 'minor_issues',

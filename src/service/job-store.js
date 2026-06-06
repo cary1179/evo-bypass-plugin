@@ -34,7 +34,7 @@ export async function enqueueJob({ root = process.cwd(), sessionId, runtime }) {
   return job;
 }
 
-export async function claimNextJob({ root = process.cwd(), leaseMs = 180000 } = {}) {
+export async function claimNextJob({ root = process.cwd(), leaseMs = 180000, lockStaleMs = 60000 } = {}) {
   const paths = resolveServicePaths({ root });
   await fs.mkdir(paths.jobsDir, { recursive: true });
 
@@ -42,7 +42,7 @@ export async function claimNextJob({ root = process.cwd(), leaseMs = 180000 } = 
     .filter((job) => job.status === 'queued')
     .sort((left, right) => String(left.created_at).localeCompare(String(right.created_at)));
   for (const candidate of queued) {
-    const release = await tryAcquireClaimLock(paths.jobsDir, candidate.id);
+    const release = await tryAcquireJobLock(paths.jobsDir, candidate.id, { lockStaleMs });
     if (!release) continue;
 
     try {
@@ -127,7 +127,7 @@ export async function listJobs({ root = process.cwd() } = {}) {
   return jobs;
 }
 
-export async function resetStaleRunningJobs({ root = process.cwd(), now = new Date() } = {}) {
+export async function resetStaleRunningJobs({ root = process.cwd(), now = new Date(), lockStaleMs = 60000 } = {}) {
   const paths = resolveServicePaths({ root });
   const reset = [];
 
@@ -135,15 +135,26 @@ export async function resetStaleRunningJobs({ root = process.cwd(), now = new Da
     if (job.status !== 'running') continue;
     if (!job.lease_expires_at || Date.parse(job.lease_expires_at) > now.getTime()) continue;
 
-    const queued = {
-      ...job,
-      status: 'queued',
-      started_at: '',
-      lease_expires_at: '',
-      lease_token: '',
-    };
-    reset.push(queued);
-    await writeJob(paths.jobsDir, queued);
+    const release = await tryAcquireJobLock(paths.jobsDir, job.id, { lockStaleMs });
+    if (!release) continue;
+
+    try {
+      const current = await readJob({ root, jobId: job.id });
+      if (current.status !== 'running') continue;
+      if (!current.lease_expires_at || Date.parse(current.lease_expires_at) > now.getTime()) continue;
+
+      const queued = {
+        ...current,
+        status: 'queued',
+        started_at: '',
+        lease_expires_at: '',
+        lease_token: '',
+      };
+      reset.push(queued);
+      await writeJob(paths.jobsDir, queued);
+    } finally {
+      await release();
+    }
   }
 
   return reset;
@@ -152,7 +163,7 @@ export async function resetStaleRunningJobs({ root = process.cwd(), now = new Da
 async function updateJob({ root, jobId, leaseToken, patch }) {
   const paths = resolveServicePaths({ root });
   const job = await readJob({ root, jobId });
-  if (leaseToken !== undefined && job.lease_token !== leaseToken) {
+  if ((job.lease_token || leaseToken !== undefined) && job.lease_token !== leaseToken) {
     throw new Error('stale job lease');
   }
   const updated = { ...job, ...patch, lease_expires_at: '', lease_token: '' };
@@ -170,25 +181,56 @@ function jobFile(jobsDir, jobId) {
   return path.join(jobsDir, `${jobId}.json`);
 }
 
-async function tryAcquireClaimLock(jobsDir, jobId) {
+async function tryAcquireJobLock(jobsDir, jobId, { lockStaleMs }) {
   const lockPath = claimLockFile(jobsDir, jobId);
-  let handle;
-  try {
-    handle = await fs.open(lockPath, 'wx');
-  } catch (error) {
-    if (error.code === 'EEXIST') return undefined;
-    throw error;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    let handle;
+    try {
+      handle = await fs.open(lockPath, 'wx');
+      await handle.writeFile(`${JSON.stringify({ created_at: new Date().toISOString() })}\n`);
+      return async () => {
+        await handle.close();
+        await fs.rm(lockPath, { force: true });
+      };
+    } catch (error) {
+      if (handle) await handle.close();
+      if (error.code !== 'EEXIST') throw error;
+      if (!await removeStaleLock(lockPath, { lockStaleMs })) return undefined;
+    }
   }
 
-  return async () => {
-    await handle.close();
-    await fs.rm(lockPath, { force: true });
-  };
+  return undefined;
 }
 
 function claimLockFile(jobsDir, jobId) {
   validateJobId(jobId);
   return path.join(jobsDir, `${jobId}.claim.lock`);
+}
+
+async function removeStaleLock(lockPath, { lockStaleMs }) {
+  let stats;
+  try {
+    stats = await fs.stat(lockPath);
+  } catch (error) {
+    if (error.code === 'ENOENT') return true;
+    throw error;
+  }
+
+  const createdAt = await readLockCreatedAt(lockPath);
+  const lockTime = createdAt === undefined ? stats.mtimeMs : createdAt;
+  if (Date.now() - lockTime <= lockStaleMs) return false;
+  await fs.rm(lockPath, { force: true });
+  return true;
+}
+
+async function readLockCreatedAt(lockPath) {
+  try {
+    const parsed = JSON.parse(await fs.readFile(lockPath, 'utf8'));
+    const time = Date.parse(parsed.created_at);
+    return Number.isNaN(time) ? undefined : time;
+  } catch {
+    return undefined;
+  }
 }
 
 function validateSessionId(sessionId) {

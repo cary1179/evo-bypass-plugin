@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { resolveServicePaths } from '../src/core/service-paths.js';
 import {
   claimNextJob,
   completeJob,
@@ -78,8 +79,8 @@ test('completeJob and failJob set terminal status and clear leases', async () =>
   const done = await claimNextJob({ root, leaseMs: 60000 });
   const failed = await claimNextJob({ root, leaseMs: 60000 });
 
-  const completed = await completeJob({ root, jobId: done.id });
-  const errored = await failJob({ root, jobId: failed.id, error: 'bad json' });
+  const completed = await completeJob({ root, jobId: done.id, leaseToken: done.lease_token });
+  const errored = await failJob({ root, jobId: failed.id, leaseToken: failed.lease_token, error: 'bad json' });
 
   assert.equal(completed.status, 'succeeded');
   assert.notEqual(completed.finished_at, '');
@@ -108,6 +109,32 @@ test('skipJob sets skipped status and listJobs returns readable jobs', async () 
   assert.equal(skipped.error, 'no events');
   assert.equal(jobs.length, 1);
   assert.equal(jobs[0].id, job.id);
+});
+
+test('terminal updates require the lease token for running claimed jobs', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-jobs-'));
+  const job = await enqueueJob({ root, sessionId: 'sess_require_token', runtime: 'codex' });
+  const claimed = await claimNextJob({ root, leaseMs: 60000 });
+
+  await assert.rejects(
+    () => completeJob({ root, jobId: job.id }),
+    /stale job lease/
+  );
+  let current = await readJob({ root, jobId: job.id });
+  assert.equal(current.status, 'running');
+  assert.equal(current.lease_token, claimed.lease_token);
+
+  await assert.rejects(
+    () => completeJob({ root, jobId: job.id, leaseToken: 'wrong-token' }),
+    /stale job lease/
+  );
+  current = await readJob({ root, jobId: job.id });
+  assert.equal(current.status, 'running');
+  assert.equal(current.lease_token, claimed.lease_token);
+
+  const completed = await completeJob({ root, jobId: job.id, leaseToken: claimed.lease_token });
+  assert.equal(completed.status, 'succeeded');
+  assert.equal(completed.lease_token, '');
 });
 
 test('claimNextJob returns one claim for concurrent callers of one queued job', async () => {
@@ -143,6 +170,45 @@ test('terminal updates reject stale lease tokens after reset and reclaim', async
   const completed = await completeJob({ root, jobId: job.id, leaseToken: secondClaim.lease_token });
   assert.equal(completed.status, 'succeeded');
   assert.equal(completed.lease_token, '');
+});
+
+test('claimNextJob removes stale claim locks and claims queued jobs', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-jobs-'));
+  const job = await enqueueJob({ root, sessionId: 'sess_stale_lock', runtime: 'codex' });
+  const paths = resolveServicePaths({ root });
+  await fs.writeFile(
+    path.join(paths.jobsDir, `${job.id}.claim.lock`),
+    JSON.stringify({ created_at: new Date(Date.now() - 10000).toISOString() })
+  );
+
+  const claimed = await claimNextJob({ root, leaseMs: 60000, lockStaleMs: 1 });
+
+  assert.equal(claimed.id, job.id);
+  assert.equal(claimed.status, 'running');
+  assert.match(claimed.lease_token, /^[0-9a-f-]+$/i);
+  await assert.rejects(
+    fs.stat(path.join(paths.jobsDir, `${job.id}.claim.lock`)),
+    { code: 'ENOENT' }
+  );
+});
+
+test('resetStaleRunningJobs skips jobs while a fresh claim lock is held', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-jobs-'));
+  const job = await enqueueJob({ root, sessionId: 'sess_reset_locked', runtime: 'codex' });
+  const claimed = await claimNextJob({ root, leaseMs: 1 });
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  const paths = resolveServicePaths({ root });
+  await fs.writeFile(
+    path.join(paths.jobsDir, `${job.id}.claim.lock`),
+    JSON.stringify({ created_at: new Date().toISOString() })
+  );
+
+  const reset = await resetStaleRunningJobs({ root, now: new Date(), lockStaleMs: 60000 });
+  const current = await readJob({ root, jobId: job.id });
+
+  assert.deepEqual(reset, []);
+  assert.equal(current.status, 'running');
+  assert.equal(current.lease_token, claimed.lease_token);
 });
 
 test('readJob validates safe job path segments', async () => {

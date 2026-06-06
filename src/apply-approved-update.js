@@ -157,6 +157,9 @@ async function nearestExistingAncestor(targetPath, rootPath) {
       await fs.lstat(current);
       return current;
     } catch (error) {
+      if (error.code === 'ENOTDIR') {
+        throw new Error('target must be a file path');
+      }
       if (error.code !== 'ENOENT') throw error;
     }
     if (current === rootPath) break;

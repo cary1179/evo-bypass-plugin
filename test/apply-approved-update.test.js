@@ -326,6 +326,33 @@ test('applyApprovedUpdate preflights existing directory targets before any write
   await assert.rejects(fs.stat(paths.appliedPatchPath), { code: 'ENOENT' });
 });
 
+test('applyApprovedUpdate treats a file parent in target path as validation before writes', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-'));
+  const paths = resolveSessionPaths({ root, sessionId: 'sess_apply_file_parent' });
+  const fileParent = path.join(root, 'notadir');
+  await fs.mkdir(paths.sessionDir, { recursive: true });
+  await fs.writeFile(fileParent, 'I am a file, not a directory.\n');
+  await fs.writeFile(paths.suggestionsPath, JSON.stringify({
+    session_id: 'sess_apply_file_parent',
+    suggestions: [
+      { id: 'sug_1', target: paths.defaultKnowledgePath, proposed_text: 'Must not be partially written.' },
+      { id: 'sug_2', target: path.join(fileParent, 'bad.md'), proposed_text: 'Parent file targets are invalid.' }
+    ]
+  }));
+  await fs.writeFile(paths.approvalPath, JSON.stringify({
+    approved_at: new Date().toISOString(),
+    approved_suggestion_ids: ['sug_1', 'sug_2'],
+    approval_text: 'yes, apply both suggestions'
+  }));
+
+  await assert.rejects(
+    applyApprovedUpdate({ root, sessionId: 'sess_apply_file_parent' }),
+    /target must be a file path/
+  );
+  await assert.rejects(fs.stat(paths.defaultKnowledgePath), { code: 'ENOENT' });
+  await assert.rejects(fs.stat(paths.appliedPatchPath), { code: 'ENOENT' });
+});
+
 test('applyApprovedUpdate rejects duplicate approval ids', async () => {
   const { root } = await writeApprovedUpdateFixture({
     sessionId: 'sess_apply_duplicate_ids',

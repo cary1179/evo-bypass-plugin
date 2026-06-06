@@ -126,6 +126,48 @@ test('service server apply route returns 200 for valid approval and writes targe
   }
 });
 
+test('service apply route maps directory target validation to 400', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-service-'));
+  const paths = await writeSession(root, 'sess_apply_directory_target');
+  const directoryTarget = path.join(root, 'directory-target');
+  await fs.mkdir(directoryTarget, { recursive: true });
+  const service = await startServiceServer({ root, host: '127.0.0.1', port: 0, startWorker: false });
+  try {
+    await fs.writeFile(paths.retrospectivePath, `${JSON.stringify({
+      session_id: 'sess_apply_directory_target',
+      summary: 'Found one action.',
+      retrospective: {
+        outcome: 'completed',
+        quality: 'minor_issues',
+        findings: [{
+          id: 'finding_1',
+          category: 'knowledge',
+          severity: 'medium',
+          evidence: ['evt_service'],
+          diagnosis: 'Reusable convention.',
+          recommendation: 'Save it.',
+          action: {
+            type: 'update_knowledge',
+            confidence: 'high',
+            target: directoryTarget,
+            proposed_text: 'Directory target should fail.',
+            rationale: 'Future sessions should remember this.'
+          }
+        }]
+      }
+    })}\n`);
+
+    const result = await postJson(`${service.url}/api/sessions/sess_apply_directory_target/apply`, {
+      approved_suggestion_ids: ['finding_1']
+    });
+
+    assert.equal(result.response.status, 400);
+    assert.match(result.body.error, /target must be a file path/);
+  } finally {
+    await service.close();
+  }
+});
+
 test('service apply route rejects unsafe session ids', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-service-'));
   const service = await startServiceServer({ root, host: '127.0.0.1', port: 0, startWorker: false });

@@ -2,7 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { resolveSessionPaths } from '../core/session-paths.js';
 import { extractKnowledgeActions } from '../core/retrospective-schema.js';
-import { findingToSuggestion, formatKnowledgeEntry, resolveSafeTarget } from '../apply-approved-update.js';
+import { assertWritableFileTarget, findingToSuggestion, formatKnowledgeEntry, resolveSafeTarget } from '../apply-approved-update.js';
 
 export async function applyEditedApprovedUpdate({
   root = process.cwd(),
@@ -145,18 +145,6 @@ async function readJson(filePath, message) {
     if (error.code === 'ENOENT') {
       throw new Error(message);
     }
-    throw error;
-  }
-}
-
-async function assertWritableFileTarget(target) {
-  try {
-    const stat = await fs.lstat(target);
-    if (stat.isDirectory()) {
-      throw new Error('target must be a file path');
-    }
-  } catch (error) {
-    if (error.code === 'ENOENT') return;
     throw error;
   }
 }

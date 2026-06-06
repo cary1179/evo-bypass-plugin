@@ -103,12 +103,14 @@ async function validateApprovedSuggestion({ root, suggestion }) {
   }
 
   try {
+    const target = await resolveSafeTarget(root, suggestion.target);
+    await assertWritableFileTarget(target);
     return {
       suggestion,
-      target: await resolveSafeTarget(root, suggestion.target)
+      target
     };
   } catch (error) {
-    if (error.message === 'target must stay inside root') {
+    if (error.message === 'target must stay inside root' || error.message === 'target must be a file path') {
       throw error;
     }
     throw new Error('approved suggestion must include id, safe target, and proposed_text');
@@ -134,6 +136,18 @@ export async function resolveSafeTarget(root, target) {
   }
 
   return targetPath;
+}
+
+export async function assertWritableFileTarget(target) {
+  try {
+    const stat = await fs.lstat(target);
+    if (stat.isDirectory()) {
+      throw new Error('target must be a file path');
+    }
+  } catch (error) {
+    if (error.code === 'ENOENT') return;
+    throw error;
+  }
 }
 
 async function nearestExistingAncestor(targetPath, rootPath) {

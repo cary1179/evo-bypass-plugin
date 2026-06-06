@@ -303,7 +303,7 @@ function normalizeLoopbackHost(host) {
 
 function mapValidationError(error) {
   if (error instanceof HttpError) return error;
-  if (/safe path segment|required|invalid json|json body|approved_|approval must|edits must|target must stay|non-empty/i.test(error.message || '')) {
+  if (/safe path segment|required|invalid json|json body|approved_|approval must|edits must|target must stay|target must be a file path|non-empty/i.test(error.message || '')) {
     return new HttpError(400, error.message);
   }
   return error;

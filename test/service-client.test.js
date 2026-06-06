@@ -56,6 +56,17 @@ test('readServiceUrl ignores remote service-url file', async () => {
   }
 });
 
+test('readServiceUrl ignores remote fallback URL', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-service-url-'));
+  const previous = process.env.EVO_BYPASS_SERVICE_URL;
+  try {
+    delete process.env.EVO_BYPASS_SERVICE_URL;
+    assert.equal(await readServiceUrl({ root, fallbackUrl: 'http://example.com:8765' }), 'http://127.0.0.1:8765');
+  } finally {
+    restoreEnv('EVO_BYPASS_SERVICE_URL', previous);
+  }
+});
+
 test('readServiceUrl accepts loopback service URLs', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-service-url-'));
   const previous = process.env.EVO_BYPASS_SERVICE_URL;

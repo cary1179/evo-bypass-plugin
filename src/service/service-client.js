@@ -5,6 +5,7 @@ import path from 'node:path';
 import { resolveServicePaths } from '../core/service-paths.js';
 
 const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '[::1]']);
+const LOCAL_FALLBACK_URL = 'http://127.0.0.1:8765';
 
 export function serviceUrl({ host = '127.0.0.1', port = 8765 } = {}) {
   return `http://${host}:${port}`;
@@ -21,9 +22,9 @@ export async function readServiceUrl({ root = process.cwd(), fallbackUrl } = {})
     return safeServiceUrl(text.trim(), fallbackUrl);
   } catch (error) {
     if (error.code === 'ENOENT') {
-      return fallbackUrl;
+      return safeFallbackUrl(fallbackUrl);
     }
-    return fallbackUrl;
+    return safeFallbackUrl(fallbackUrl);
   }
 }
 
@@ -121,16 +122,32 @@ function trimTrailingSlashes(url) {
 
 function safeServiceUrl(candidate, fallbackUrl) {
   if (!candidate) {
-    return fallbackUrl;
+    return safeFallbackUrl(fallbackUrl);
   }
 
   try {
     const parsed = new URL(candidate);
     if (parsed.protocol !== 'http:' || !LOOPBACK_HOSTS.has(parsed.hostname)) {
-      return fallbackUrl;
+      return safeFallbackUrl(fallbackUrl);
     }
     return trimTrailingSlashes(parsed.href);
   } catch {
-    return fallbackUrl;
+    return safeFallbackUrl(fallbackUrl);
+  }
+}
+
+function safeFallbackUrl(fallbackUrl) {
+  if (!fallbackUrl) {
+    return LOCAL_FALLBACK_URL;
+  }
+
+  try {
+    const parsed = new URL(fallbackUrl);
+    if (parsed.protocol !== 'http:' || !LOOPBACK_HOSTS.has(parsed.hostname)) {
+      return LOCAL_FALLBACK_URL;
+    }
+    return trimTrailingSlashes(parsed.href);
+  } catch {
+    return LOCAL_FALLBACK_URL;
   }
 }

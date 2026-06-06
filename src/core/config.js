@@ -23,6 +23,7 @@ const OPEN_MODES = new Set(['off', 'url', 'browser']);
 const REVIEWER_MODES = new Set(['rules', 'ai', 'auto']);
 const REVIEWER_FALLBACKS = new Set(['rules', 'none']);
 const PROVIDER_TYPES = new Set(['openai-compatible']);
+const SERVICE_LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '::1', '[::1]']);
 
 const DEFAULT_REVIEWER = Object.freeze({
   mode: 'rules',
@@ -86,7 +87,7 @@ export function normalizeService(input) {
   const service = isObject(input) ? input : {};
   return {
     enabled: typeof service.enabled === 'boolean' ? service.enabled : DEFAULT_SERVICE.enabled,
-    host: typeof service.host === 'string' && service.host.trim() ? service.host : DEFAULT_SERVICE.host,
+    host: normalizeServiceHost(service.host),
     port: Number.isInteger(service.port) && service.port > 0 && service.port <= 65535
       ? service.port
       : DEFAULT_SERVICE.port,
@@ -100,6 +101,14 @@ export function normalizeService(input) {
       ? service.openBrowserOnKnowledge
       : DEFAULT_SERVICE.openBrowserOnKnowledge
   };
+}
+
+function normalizeServiceHost(host) {
+  if (typeof host !== 'string') {
+    return DEFAULT_SERVICE.host;
+  }
+  const trimmed = host.trim();
+  return SERVICE_LOOPBACK_HOSTS.has(trimmed) ? trimmed : DEFAULT_SERVICE.host;
 }
 
 export function normalizeReviewer(input) {

@@ -4,6 +4,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { readBypassConfig, normalizeService, shouldExposeViewer } from '../src/core/config.js';
+import { serviceUrl } from '../src/service/service-client.js';
 
 test('readBypassConfig returns safe defaults when config is missing', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-config-'));
@@ -158,6 +159,23 @@ test('readBypassConfig normalizes async review service defaults', async () => {
   assert.equal(config.service.idleTimeoutMs, 1200000);
   assert.equal(config.service.healthTimeoutMs, 250);
   assert.equal(config.service.openBrowserOnKnowledge, true);
+});
+
+test('readBypassConfig rejects remote async review service host', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-config-'));
+  await fs.mkdir(path.join(root, '.bypass'), { recursive: true });
+  await fs.writeFile(path.join(root, '.bypass', 'config.json'), `${JSON.stringify({
+    service: {
+      host: 'example.com',
+      port: 9999
+    }
+  })}\n`);
+
+  const config = await readBypassConfig({ root });
+
+  assert.equal(config.service.host, '127.0.0.1');
+  assert.equal(config.service.port, 9999);
+  assert.equal(serviceUrl(config.service), 'http://127.0.0.1:9999');
 });
 
 test('normalizeService accepts valid async review service settings', () => {

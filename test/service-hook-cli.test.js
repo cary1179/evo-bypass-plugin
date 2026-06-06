@@ -185,8 +185,8 @@ test('session-start-service honors payload root when service is disabled', async
   await assert.rejects(fs.stat(path.join(cwd, '.bypass', 'service', 'session-start.log')), { code: 'ENOENT' });
 });
 
-test('session-start-service logs unavailable when daemon script is missing', async () => {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-session-missing-daemon-'));
+test('session-start-service requests daemon start when service is unhealthy', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-session-start-daemon-'));
   const result = spawnSync(process.execPath, [sessionStartCli, '--runtime', 'codex'], {
     cwd: root,
     input: JSON.stringify({ root }),
@@ -197,6 +197,17 @@ test('session-start-service logs unavailable when daemon script is missing', asy
   assert.equal(result.status, 0);
   assert.deepEqual(JSON.parse(result.stdout), { continue: true, suppressOutput: true });
   const log = await fs.readFile(path.join(root, '.bypass', 'service', 'session-start.log'), 'utf8');
-  assert.match(log, /service_start_unavailable/);
-  assert.doesNotMatch(log, /service_start_requested/);
+  const entry = JSON.parse(log.trim());
+  assert.equal(entry.event, 'service_start_requested');
+  assert.equal(entry.runtime, 'codex');
+  assert.equal(typeof entry.pid, 'number');
+  stopDetachedProcess(entry.pid);
 });
+
+function stopDetachedProcess(pid) {
+  try {
+    process.kill(pid, 'SIGTERM');
+  } catch {
+    // The daemon may have already exited if the default port was unavailable.
+  }
+}

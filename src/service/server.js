@@ -20,6 +20,7 @@ export async function startServiceServer({
   port = 8765,
   startWorker = true,
   workerIntervalMs = DEFAULT_WORKER_INTERVAL_MS,
+  worker = runOneReviewJob,
 } = {}) {
   const safeHost = normalizeLoopbackHost(host);
   const version = await packageVersion();
@@ -27,7 +28,7 @@ export async function startServiceServer({
     try {
       await handleRequest({ request, response, root, version, serverUrl: serviceUrl({ host: safeHost, port: serverPort(server, port) }) });
     } catch (error) {
-      sendJson(response, 500, { error: error.message || 'Internal server error' });
+      sendError(response, error);
     }
   });
 
@@ -44,10 +45,17 @@ export async function startServiceServer({
   await writeServiceFiles({ root, url });
 
   let workerTimer;
+  let workerInFlight = false;
   if (startWorker) {
     await resetStaleRunningJobs({ root });
     workerTimer = setInterval(() => {
-      runOneReviewJob({ root }).catch(() => {});
+      if (workerInFlight) return;
+      workerInFlight = true;
+      worker({ root })
+        .catch(() => {})
+        .finally(() => {
+          workerInFlight = false;
+        });
     }, workerIntervalMs);
     workerTimer.unref?.();
   }
@@ -57,7 +65,7 @@ export async function startServiceServer({
     host: safeHost,
     port: resolvedPort,
     url,
-    close: () => closeService({ server, workerTimer }),
+    close: () => closeService({ root, server, workerTimer, url, pid: process.pid }),
   };
 }
 
@@ -78,6 +86,9 @@ async function handleRequest({ request, response, root, version, serverUrl }) {
 
   if (request.method === 'POST' && url.pathname === '/api/jobs') {
     const body = await readJsonBody(request);
+    if (!body.session_id || typeof body.session_id !== 'string') {
+      throw new HttpError(400, 'session_id is required');
+    }
     const job = await enqueueJob({
       root,
       sessionId: body.session_id,
@@ -93,8 +104,15 @@ async function handleRequest({ request, response, root, version, serverUrl }) {
   }
 
   if (request.method === 'GET' && url.pathname.startsWith('/api/jobs/')) {
-    const jobId = decodeURIComponent(url.pathname.slice('/api/jobs/'.length));
-    sendJson(response, 200, await readJob({ root, jobId }));
+    const jobId = safeDecodePathSegment(url.pathname.slice('/api/jobs/'.length));
+    try {
+      sendJson(response, 200, await readJob({ root, jobId }));
+    } catch (error) {
+      if (error.code === 'ENOENT') {
+        throw new HttpError(404, 'Job not found');
+      }
+      throw mapValidationError(error);
+    }
     return;
   }
 
@@ -104,14 +122,18 @@ async function handleRequest({ request, response, root, version, serverUrl }) {
   }
 
   if (request.method === 'POST' && url.pathname.startsWith('/api/sessions/') && url.pathname.endsWith('/apply')) {
-    const sessionId = decodeURIComponent(url.pathname.slice('/api/sessions/'.length, -'/apply'.length));
+    const sessionId = safeDecodePathSegment(url.pathname.slice('/api/sessions/'.length, -'/apply'.length));
     await handleApply({ response, root, sessionId, body: await readJsonBody(request) });
     return;
   }
 
   if (request.method === 'GET' && url.pathname.startsWith('/api/sessions/')) {
-    const sessionId = decodeURIComponent(url.pathname.slice('/api/sessions/'.length));
-    sendJson(response, 200, await getSessionDetail({ root, sessionId }));
+    const sessionId = safeDecodePathSegment(url.pathname.slice('/api/sessions/'.length));
+    try {
+      sendJson(response, 200, await getSessionDetail({ root, sessionId }));
+    } catch (error) {
+      throw mapValidationError(error);
+    }
     return;
   }
 
@@ -142,7 +164,7 @@ async function handleApply({ response, root, sessionId, body }) {
       sendJson(response, 501, { error: error.message });
       return;
     }
-    throw error;
+    throw mapValidationError(error);
   }
 }
 
@@ -151,19 +173,30 @@ async function readJsonBody(request) {
   for await (const chunk of request) {
     raw += chunk;
     if (raw.length > 1024 * 1024) {
-      throw new Error('Request body too large');
+      throw new HttpError(413, 'Request body too large');
     }
   }
   if (!raw.trim()) return {};
   try {
     const parsed = JSON.parse(raw);
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-      throw new Error('JSON body must be an object');
+      throw new HttpError(400, 'JSON body must be an object');
     }
     return parsed;
   } catch (error) {
     if (error instanceof SyntaxError) {
-      throw new Error('Invalid JSON body');
+      throw new HttpError(400, 'Invalid JSON body');
+    }
+    throw error;
+  }
+}
+
+function safeDecodePathSegment(value) {
+  try {
+    return decodeURIComponent(value);
+  } catch (error) {
+    if (error instanceof URIError) {
+      throw new HttpError(400, 'Malformed path encoding');
     }
     throw error;
   }
@@ -172,6 +205,21 @@ async function readJsonBody(request) {
 function sendJson(response, statusCode, body) {
   response.writeHead(statusCode, { 'content-type': 'application/json; charset=utf-8' });
   response.end(`${JSON.stringify(body, null, 2)}\n`);
+}
+
+function sendError(response, error) {
+  if (error instanceof HttpError) {
+    sendJson(response, error.statusCode, { error: error.message });
+    return;
+  }
+
+  const mapped = mapValidationError(error);
+  if (mapped instanceof HttpError) {
+    sendJson(response, mapped.statusCode, { error: mapped.message });
+    return;
+  }
+
+  sendJson(response, 500, { error: error.message || 'Internal server error' });
 }
 
 async function sendUi(response) {
@@ -196,11 +244,31 @@ async function writeServiceFiles({ root, url }) {
   await fs.writeFile(paths.servicePidPath, `${process.pid}\n`);
 }
 
-function closeService({ server, workerTimer }) {
+async function closeService({ root, server, workerTimer, url, pid }) {
   if (workerTimer) clearInterval(workerTimer);
-  return new Promise((resolve, reject) => {
+  await new Promise((resolve, reject) => {
     server.close((error) => error ? reject(error) : resolve());
   });
+  await removeMatchingServiceFiles({ root, url, pid });
+}
+
+async function removeMatchingServiceFiles({ root, url, pid }) {
+  const paths = resolveServicePaths({ root });
+  await Promise.all([
+    removeFileIfContentMatches(paths.serviceUrlPath, `${url}\n`),
+    removeFileIfContentMatches(paths.servicePidPath, `${pid}\n`),
+  ]);
+}
+
+async function removeFileIfContentMatches(filePath, expectedContent) {
+  try {
+    const content = await fs.readFile(filePath, 'utf8');
+    if (content === expectedContent) {
+      await fs.rm(filePath, { force: true });
+    }
+  } catch (error) {
+    if (error.code !== 'ENOENT') throw error;
+  }
 }
 
 function serverPort(server, fallbackPort) {
@@ -215,5 +283,21 @@ function serviceUrl({ host, port }) {
 function normalizeLoopbackHost(host) {
   if (typeof host !== 'string') return '127.0.0.1';
   const trimmed = host.trim();
-  return LOOPBACK_HOSTS.has(trimmed) ? trimmed : '127.0.0.1';
+  if (!LOOPBACK_HOSTS.has(trimmed)) return '127.0.0.1';
+  return trimmed === '[::1]' ? '::1' : trimmed;
+}
+
+function mapValidationError(error) {
+  if (error instanceof HttpError) return error;
+  if (/safe path segment|required|invalid json|json body/i.test(error.message || '')) {
+    return new HttpError(400, error.message);
+  }
+  return error;
+}
+
+class HttpError extends Error {
+  constructor(statusCode, message) {
+    super(message);
+    this.statusCode = statusCode;
+  }
 }

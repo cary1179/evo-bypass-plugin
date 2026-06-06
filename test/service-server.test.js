@@ -105,6 +105,92 @@ test('service close stops accepting requests', async () => {
   await assert.rejects(fetch(`${url}/api/health`), /fetch failed/i);
 });
 
+test('service worker ticks do not overlap while a run is pending', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-service-'));
+  let active = 0;
+  let maxActive = 0;
+  let calls = 0;
+  let releaseWorker;
+  const firstRun = new Promise((resolve) => {
+    releaseWorker = resolve;
+  });
+  const service = await startServiceServer({
+    root,
+    host: '127.0.0.1',
+    port: 0,
+    workerIntervalMs: 5,
+    worker: async () => {
+      calls += 1;
+      active += 1;
+      maxActive = Math.max(maxActive, active);
+      try {
+        if (calls === 1) {
+          await firstRun;
+        }
+      } finally {
+        active -= 1;
+      }
+    },
+  });
+  try {
+    await waitFor(() => calls >= 1);
+    await delay(40);
+    assert.equal(calls, 1);
+    assert.equal(maxActive, 1);
+    releaseWorker();
+    await waitFor(() => calls >= 2);
+    assert.equal(maxActive, 1);
+  } finally {
+    releaseWorker();
+    await service.close();
+  }
+});
+
+test('service normalizes bracketed IPv6 host for listen and URL', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-service-'));
+  const service = await startServiceServer({ root, host: '[::1]', port: 0, startWorker: false });
+  try {
+    assert.equal(service.host, '::1');
+    assert.match(service.url, /^http:\/\/\[::1\]:\d+$/);
+    const health = await getJson(`${service.url}/api/health`);
+    assert.equal(health.ok, true);
+  } finally {
+    await service.close();
+  }
+});
+
+test('service maps client request errors to stable HTTP statuses', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-service-'));
+  const service = await startServiceServer({ root, host: '127.0.0.1', port: 0, startWorker: false });
+  try {
+    assert.equal((await postRaw(`${service.url}/api/jobs`, '{')).response.status, 400);
+    assert.equal((await postRaw(`${service.url}/api/jobs`, '[]')).response.status, 400);
+    assert.equal((await postJson(`${service.url}/api/jobs`, { runtime: 'codex' })).response.status, 400);
+    assert.equal((await fetch(`${service.url}/api/jobs/not-a-job-id`)).status, 400);
+    assert.equal((await fetch(`${service.url}/api/jobs/job_missing`)).status, 404);
+    assert.equal((await fetch(`${service.url}/api/sessions/%E0%A4%A`)).status, 400);
+    assert.equal((await postRaw(`${service.url}/api/jobs`, 'x'.repeat(1024 * 1024 + 1))).response.status, 413);
+  } finally {
+    await service.close();
+  }
+});
+
+test('service close removes only matching service files', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-service-'));
+  const paths = resolveServicePaths({ root });
+  const service = await startServiceServer({ root, host: '127.0.0.1', port: 0, startWorker: false });
+  await fs.writeFile(paths.serviceUrlPath, 'http://127.0.0.1:65535\n');
+  await fs.writeFile(paths.servicePidPath, '999999\n');
+  await service.close();
+  assert.equal((await fs.readFile(paths.serviceUrlPath, 'utf8')).trim(), 'http://127.0.0.1:65535');
+  assert.equal((await fs.readFile(paths.servicePidPath, 'utf8')).trim(), '999999');
+
+  const second = await startServiceServer({ root, host: '127.0.0.1', port: 0, startWorker: false });
+  await second.close();
+  await assert.rejects(fs.readFile(paths.serviceUrlPath, 'utf8'), { code: 'ENOENT' });
+  await assert.rejects(fs.readFile(paths.servicePidPath, 'utf8'), { code: 'ENOENT' });
+});
+
 async function getJson(url) {
   const response = await fetch(url);
   assert.equal(response.status, 200);
@@ -120,6 +206,29 @@ async function postJson(url, body) {
   });
   assert.equal(response.headers.get('content-type').includes('application/json'), true);
   return { response, body: await response.json() };
+}
+
+async function postRaw(url, body) {
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body,
+  });
+  assert.equal(response.headers.get('content-type').includes('application/json'), true);
+  return { response, body: await response.json() };
+}
+
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function waitFor(predicate, { timeoutMs = 1000, intervalMs = 5 } = {}) {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < timeoutMs) {
+    if (predicate()) return;
+    await delay(intervalMs);
+  }
+  assert.fail('timed out waiting for condition');
 }
 
 async function writeSession(root, sessionId) {

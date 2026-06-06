@@ -187,6 +187,9 @@ test('session-start-service honors payload root when service is disabled', async
 
 test('session-start-service requests daemon start when service is unhealthy', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-session-start-daemon-'));
+  const port = await freePort();
+  await fs.mkdir(path.join(root, '.bypass'), { recursive: true });
+  await fs.writeFile(path.join(root, '.bypass', 'config.json'), JSON.stringify({ service: { port } }));
   const result = spawnSync(process.execPath, [sessionStartCli, '--runtime', 'codex'], {
     cwd: root,
     input: JSON.stringify({ root }),
@@ -201,7 +204,12 @@ test('session-start-service requests daemon start when service is unhealthy', as
   assert.equal(entry.event, 'service_start_requested');
   assert.equal(entry.runtime, 'codex');
   assert.equal(typeof entry.pid, 'number');
-  stopDetachedProcess(entry.pid);
+  try {
+    const serviceUrl = await waitForServiceUrl(root);
+    assert.equal(serviceUrl, `http://127.0.0.1:${port}`);
+  } finally {
+    stopDetachedProcess(entry.pid);
+  }
 });
 
 function stopDetachedProcess(pid) {
@@ -210,4 +218,29 @@ function stopDetachedProcess(pid) {
   } catch {
     // The daemon may have already exited if the default port was unavailable.
   }
+}
+
+function freePort() {
+  const server = http.createServer();
+  return new Promise((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', () => {
+      const { port } = server.address();
+      server.close((error) => error ? reject(error) : resolve(port));
+    });
+  });
+}
+
+async function waitForServiceUrl(root, { timeoutMs = 1000 } = {}) {
+  const serviceUrlPath = path.join(root, '.bypass', 'service', 'service-url');
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < timeoutMs) {
+    try {
+      return (await fs.readFile(serviceUrlPath, 'utf8')).trim();
+    } catch (error) {
+      if (error.code !== 'ENOENT') throw error;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  assert.fail('timed out waiting for daemon service-url file');
 }

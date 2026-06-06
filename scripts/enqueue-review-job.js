@@ -90,7 +90,7 @@ function sessionIdFromPayload(payload) {
 }
 
 function rootFromPayload(payload) {
-  return payload.cwd || payload.working_directory || payload.workspace || process.cwd();
+  return payload.root || payload.cwd || payload.working_directory || payload.workspace || process.cwd();
 }
 
 function emitContinue() {

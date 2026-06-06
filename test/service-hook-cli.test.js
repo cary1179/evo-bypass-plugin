@@ -63,6 +63,43 @@ test('enqueue-review-job posts job when service is healthy', async () => {
   }
 });
 
+test('enqueue-review-job honors payload root when service is healthy', async () => {
+  const cwd = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-hook-cwd-'));
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-hook-root-'));
+  const jobs = [];
+  const server = http.createServer(async (request, response) => {
+    if (request.url === '/api/health') {
+      response.writeHead(200, { 'content-type': 'application/json' });
+      response.end(JSON.stringify({ name: 'evo-bypassd', ok: true }));
+      return;
+    }
+    if (request.url === '/api/jobs') {
+      let body = '';
+      for await (const chunk of request) body += chunk;
+      jobs.push(JSON.parse(body));
+      response.writeHead(202, { 'content-type': 'application/json' });
+      response.end(JSON.stringify({ id: 'job_sess_root', status: 'queued' }));
+      return;
+    }
+    response.writeHead(404).end();
+  });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  try {
+    const { port } = server.address();
+    const result = await runCli([enqueueCli, '--runtime', 'codex'], {
+      cwd,
+      input: JSON.stringify({ session_id: 'sess_root', root }),
+      env: { ...process.env, EVO_BYPASS_SERVICE_URL: `http://127.0.0.1:${port}` },
+    });
+
+    assert.equal(result.status, 0);
+    assert.deepEqual(JSON.parse(result.stdout), { continue: true, suppressOutput: true });
+    assert.deepEqual(jobs[0], { session_id: 'sess_root', runtime: 'codex', root });
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
 test('session-start-service emits continue JSON when service is already healthy', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-session-start-'));
   const server = http.createServer((request, response) => {
@@ -128,4 +165,22 @@ test('session-start-service emits continue JSON when service is disabled', async
 
   assert.equal(result.status, 0);
   assert.deepEqual(JSON.parse(result.stdout), { continue: true, suppressOutput: true });
+});
+
+test('session-start-service honors payload root when service is disabled', async () => {
+  const cwd = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-session-cwd-'));
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-session-root-'));
+  await fs.mkdir(path.join(root, '.bypass'), { recursive: true });
+  await fs.writeFile(path.join(root, '.bypass', 'config.json'), JSON.stringify({ service: { enabled: false } }));
+
+  const result = spawnSync(process.execPath, [sessionStartCli, '--runtime', 'codex'], {
+    cwd,
+    input: JSON.stringify({ root }),
+    env: { ...process.env, EVO_BYPASS_SERVICE_URL: 'http://127.0.0.1:9' },
+    encoding: 'utf8',
+  });
+
+  assert.equal(result.status, 0);
+  assert.deepEqual(JSON.parse(result.stdout), { continue: true, suppressOutput: true });
+  await assert.rejects(fs.stat(path.join(cwd, '.bypass', 'service', 'session-start.log')), { code: 'ENOENT' });
 });

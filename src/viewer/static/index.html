@@ -60,6 +60,8 @@
     .btn.primary { border-color: var(--accent); background: var(--accent); color: white; }
     .btn:disabled { cursor: not-allowed; opacity: .58; }
     .icon { width: 34px; padding: 0; }
+    .session-link { display: block; color: inherit; text-decoration: none; border-radius: 5px; }
+    .session-link:focus-visible { outline: 3px solid rgba(40, 95, 155, .28); outline-offset: 3px; }
     .metrics { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px; margin-bottom: 12px; }
     .metric { border: 1px solid var(--line); background: var(--panel); border-radius: 7px; min-height: 70px; padding: 10px; }
     .metric strong { display: block; margin-top: 7px; font-family: var(--mono); font-size: 20px; overflow-wrap: anywhere; }
@@ -231,7 +233,9 @@
       selectedEventId: null,
       selectedActionIds: new Set(),
       edits: {},
-      applying: false
+      applying: false,
+      applyMessage: "",
+      applyTone: ""
     };
     const ids = ["appShell","workspace","serviceStatus","railStats","listRoute","detailRoute","sessionRows","searchInput","runtimeFilter","jobFilter","actionFilter","refreshList","refreshDetail","listMetrics","detailMetrics","detailTitle","detailSubtitle","runtimePill","metadataPanel","timeline","timelineCount","findingsPanel","findingCount","selectedEventPanel","reviewerPanel","approvalPanel","approvalList","selectAllActions","applyActions","applyResult"];
     const nodes = Object.fromEntries(ids.map((id) => [id, document.getElementById(id)]));
@@ -249,6 +253,7 @@
     nodes.applyActions.addEventListener("click", applySelectedActions);
     window.addEventListener("popstate", () => renderRoute().catch(showListError));
     document.addEventListener("click", (event) => {
+      if (event.target.closest("a, button, input, textarea, select, label")) return;
       const row = event.target.closest("[data-session]");
       if (row) {
         event.preventDefault();
@@ -267,12 +272,14 @@
         const id = event.target.dataset.actionSelect;
         if (event.target.checked) state.selectedActionIds.add(id);
         else state.selectedActionIds.delete(id);
+        clearApplyMessage();
         renderApplyState();
       }
     });
     document.addEventListener("input", (event) => {
       if (event.target.matches("[data-action-edit]")) {
         state.edits[event.target.dataset.actionEdit] = event.target.value;
+        clearApplyMessage();
         renderApplyState();
       }
     });
@@ -349,7 +356,7 @@
         nodes.sessionRows.innerHTML = `<tr><td colspan="7"><div class="empty">No sessions match the current filters.</div></td></tr>`;
         return;
       }
-      nodes.sessionRows.innerHTML = rows.map((session) => `<tr data-session="${escapeHtml(session.session_id)}"><td><div class="mono">${escapeHtml(session.session_id)}</div><div class="preview">${escapeHtml(session.prompt_preview || "")}</div></td><td><span class="mono">${escapeHtml(formatDate(session.created_at))}</span></td><td>${pill(session.runtime)}</td><td>${pill(session.job_status || "none", jobTone(session.job_status))}</td><td><div class="mono">${escapeHtml(session.event_count || 0)} events</div><div class="muted">${escapeHtml(session.failure_count || 0)} failures</div></td><td>${pill(`${session.suggestion_count || 0} update${session.suggestion_count === 1 ? "" : "s"}`, session.suggestion_count > 0 ? "good" : "")}</td><td><div class="pill-row">${(session.signals || []).length ? session.signals.slice(0, 3).map((signal) => pill(signal, signalTone(signal))).join("") : pill("none")}</div></td></tr>`).join("");
+      nodes.sessionRows.innerHTML = rows.map((session) => `<tr data-session="${escapeHtml(session.session_id)}"><td><a class="session-link" href="/sessions/${encodeURIComponent(session.session_id)}"><div class="mono">${escapeHtml(session.session_id)}</div><div class="preview">${escapeHtml(session.prompt_preview || "")}</div></a></td><td><span class="mono">${escapeHtml(formatDate(session.created_at))}</span></td><td>${pill(session.runtime)}</td><td>${pill(session.job_status || "none", jobTone(session.job_status))}</td><td><div class="mono">${escapeHtml(session.event_count || 0)} events</div><div class="muted">${escapeHtml(session.failure_count || 0)} failures</div></td><td>${pill(`${session.suggestion_count || 0} update${session.suggestion_count === 1 ? "" : "s"}`, session.suggestion_count > 0 ? "good" : "")}</td><td><div class="pill-row">${(session.signals || []).length ? session.signals.slice(0, 3).map((signal) => pill(signal, signalTone(signal))).join("") : pill("none")}</div></td></tr>`).join("");
     }
 
     function renderDetail() {
@@ -407,8 +414,9 @@
     function renderApplyState() {
       const count = state.selectedActionIds.size;
       nodes.applyActions.disabled = state.applying || count === 0;
-      nodes.applyResult.className = "result";
-      if (!count) nodes.applyResult.textContent = "No actions selected.";
+      nodes.applyResult.className = `result ${state.applyTone}`.trim();
+      if (state.applyMessage) nodes.applyResult.textContent = state.applyMessage;
+      else if (!count) nodes.applyResult.textContent = "No actions selected.";
       else nodes.applyResult.textContent = `${count} action${count === 1 ? "" : "s"} selected.`;
     }
 
@@ -418,21 +426,22 @@
       const approved_suggestion_ids = [...state.selectedActionIds];
       const edits = Object.fromEntries(approved_suggestion_ids.map((id) => [id, state.edits[id] || ""]));
       state.applying = true;
-      nodes.applyActions.disabled = true;
-      nodes.applyResult.className = "result";
-      nodes.applyResult.textContent = "Applying selected updates...";
+      state.applyMessage = "Applying selected updates...";
+      state.applyTone = "";
+      renderApplyState();
       try {
         const result = await api(`/api/sessions/${encodeURIComponent(session.session_id)}/apply`, {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ approved_suggestion_ids, edits })
         });
-        nodes.applyResult.className = "result good";
-        nodes.applyResult.textContent = `Applied ${result.applied_count ?? approved_suggestion_ids.length} update${(result.applied_count ?? approved_suggestion_ids.length) === 1 ? "" : "s"}.`;
+        const appliedCount = result.applied_count ?? approved_suggestion_ids.length;
         await loadDetail(session.session_id);
+        state.applyMessage = `Applied ${appliedCount} update${appliedCount === 1 ? "" : "s"}.`;
+        state.applyTone = "good";
       } catch (error) {
-        nodes.applyResult.className = "result bad";
-        nodes.applyResult.textContent = error.status === 405 || error.status === 404 ? "Apply endpoint is not available in this server. Start the service server to apply approvals." : error.message;
+        state.applyMessage = error.status === 405 || error.status === 404 ? "Apply endpoint is not available in this server. Start the service server to apply approvals." : error.message;
+        state.applyTone = "bad";
       } finally {
         state.applying = false;
         renderApplyState();
@@ -443,7 +452,13 @@
       const actions = updateKnowledgeActions(state.detail);
       const allSelected = actions.length > 0 && actions.every((action) => state.selectedActionIds.has(action.id));
       state.selectedActionIds = new Set(allSelected ? [] : actions.map((action) => action.id));
+      clearApplyMessage();
       renderApprovalPanel(actions);
+    }
+
+    function clearApplyMessage() {
+      state.applyMessage = "";
+      state.applyTone = "";
     }
 
     function renderSelectedEvent(session) {

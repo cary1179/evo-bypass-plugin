@@ -46,6 +46,9 @@ test('viewer server exposes health, JSON APIs, and UI routes', async () => {
     assert.match(html, /approvalPanel/);
     assert.match(html, /approved_suggestion_ids/);
     assert.match(html, /applySelectedActions/);
+    assert.match(html, /applyMessage/);
+    assert.match(html, /class="session-link"/);
+    assert.match(html, /href="\/sessions\/\$\{encodeURIComponent\(session\.session_id\)\}"/);
   } finally {
     await viewer.close();
   }

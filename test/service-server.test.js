@@ -83,20 +83,50 @@ test('service server delegates sessions APIs and serves existing UI HTML', async
   }
 });
 
-test('service server keeps apply route isolated until Task 7 exists', async () => {
+test('service server apply route returns 200 for valid approval and writes target', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-service-'));
-  await writeSession(root, 'sess_apply');
+  const paths = await writeSession(root, 'sess_apply');
   const service = await startServiceServer({ root, host: '127.0.0.1', port: 0, startWorker: false });
   try {
-    const result = await postJson(`${service.url}/api/sessions/sess_apply/apply`, {});
-    assert.equal(result.response.status, 501);
-    assert.match(result.body.error, /not implemented/i);
+    await fs.writeFile(paths.retrospectivePath, `${JSON.stringify({
+      session_id: 'sess_apply',
+      summary: 'Found one action.',
+      retrospective: {
+        outcome: 'completed',
+        quality: 'minor_issues',
+        findings: [{
+          id: 'finding_1',
+          category: 'knowledge',
+          severity: 'medium',
+          evidence: ['evt_service'],
+          diagnosis: 'Reusable convention.',
+          recommendation: 'Save it.',
+          action: {
+            type: 'update_knowledge',
+            confidence: 'high',
+            target: paths.defaultKnowledgePath,
+            proposed_text: 'Original text.',
+            rationale: 'Future sessions should remember this.'
+          }
+        }]
+      }
+    })}\n`);
+
+    const result = await postJson(`${service.url}/api/sessions/sess_apply/apply`, {
+      approved_suggestion_ids: ['finding_1'],
+      edits: { finding_1: 'Edited route text.' }
+    });
+    const knowledge = await fs.readFile(paths.defaultKnowledgePath, 'utf8');
+
+    assert.equal(result.response.status, 200);
+    assert.equal(result.body.applied_count, 1);
+    assert.match(knowledge, /Edited route text/);
   } finally {
     await service.close();
   }
 });
 
-test('service apply route rejects unsafe session ids before apply implementation', async () => {
+test('service apply route rejects unsafe session ids', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-service-'));
   const service = await startServiceServer({ root, host: '127.0.0.1', port: 0, startWorker: false });
   try {
@@ -266,4 +296,5 @@ async function writeSession(root, sessionId) {
     signals: [],
     evidence: ['node --test'],
   })}\n`);
+  return paths;
 }

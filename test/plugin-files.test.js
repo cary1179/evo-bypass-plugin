@@ -16,6 +16,7 @@ test('plugin manifest and hooks are valid JSON with expected lifecycle hooks', a
   assert.equal(manifest.name, 'evo-bypass');
   assert.equal(manifest.version, '0.1.0');
   assert.ok(claudeHooks.hooks.UserPromptSubmit);
+  assert.ok(claudeHooks.hooks.SessionStart);
   assert.ok(claudeHooks.hooks.PostToolUse);
   assert.ok(claudeHooks.hooks.PostToolUseFailure);
   assert.ok(claudeHooks.hooks.Stop);
@@ -29,6 +30,10 @@ test('plugin manifest and hooks are valid JSON with expected lifecycle hooks', a
   assert.doesNotMatch(JSON.stringify(codexHooks), /node scripts\//);
   assert.doesNotMatch(JSON.stringify(claudeHooks), /CLAUDE_SESSION_ID/);
   assert.match(JSON.stringify(codexHooks), /--runtime codex/);
+  assert.match(JSON.stringify(claudeHooks), /enqueue-review-job\.js/);
+  assert.match(JSON.stringify(codexHooks), /enqueue-review-job\.js/);
+  assert.doesNotMatch(JSON.stringify(claudeHooks), /review-session\.js/);
+  assert.doesNotMatch(JSON.stringify(codexHooks), /review-session\.js/);
 });
 
 test('retrospective schema is shipped with package files', async () => {

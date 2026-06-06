@@ -253,18 +253,18 @@
     nodes.applyActions.addEventListener("click", applySelectedActions);
     window.addEventListener("popstate", () => renderRoute().catch(showListError));
     document.addEventListener("click", (event) => {
+      const inspect = event.target.closest("[data-event]");
+      if (inspect) {
+        state.selectedEventId = inspect.dataset.event;
+        renderDetail();
+        return;
+      }
       if (event.target.closest("a, button, input, textarea, select, label")) return;
       const row = event.target.closest("[data-session]");
       if (row) {
         event.preventDefault();
         history.pushState({}, "", `/sessions/${encodeURIComponent(row.dataset.session)}`);
         renderRoute().catch(showListError);
-        return;
-      }
-      const inspect = event.target.closest("[data-event]");
-      if (inspect) {
-        state.selectedEventId = inspect.dataset.event;
-        renderDetail();
       }
     });
     document.addEventListener("change", (event) => {
@@ -306,11 +306,12 @@
       renderList();
     }
 
-    async function loadDetail(sessionId) {
+    async function loadDetail(sessionId, { preserveApplyMessage = false } = {}) {
       state.detail = null;
       state.selectedEventId = null;
       state.selectedActionIds = new Set();
       state.edits = {};
+      if (!preserveApplyMessage) clearApplyMessage();
       nodes.timeline.innerHTML = `<div class="empty">Loading session detail...</div>`;
       const detail = await api(`/api/sessions/${encodeURIComponent(sessionId)}`);
       state.detail = detail;
@@ -436,7 +437,7 @@
           body: JSON.stringify({ approved_suggestion_ids, edits })
         });
         const appliedCount = result.applied_count ?? approved_suggestion_ids.length;
-        await loadDetail(session.session_id);
+        await loadDetail(session.session_id, { preserveApplyMessage: true });
         state.applyMessage = `Applied ${appliedCount} update${appliedCount === 1 ? "" : "s"}.`;
         state.applyTone = "good";
       } catch (error) {

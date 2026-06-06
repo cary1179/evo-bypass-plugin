@@ -49,6 +49,11 @@ test('viewer server exposes health, JSON APIs, and UI routes', async () => {
     assert.match(html, /applyMessage/);
     assert.match(html, /class="session-link"/);
     assert.match(html, /href="\/sessions\/\$\{encodeURIComponent\(session\.session_id\)\}"/);
+    assert.match(html, /loadDetail\(sessionId, \{ preserveApplyMessage = false \} = \{\}\)/);
+    assert.ok(
+      html.indexOf('event.target.closest("[data-event]")') < html.indexOf('event.target.closest("a, button, input, textarea, select, label")'),
+      'event inspect buttons must be handled before the interactive-control row guard'
+    );
   } finally {
     await viewer.close();
   }

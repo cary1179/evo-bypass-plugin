@@ -207,6 +207,9 @@ test('session-start-service requests daemon start when service is unhealthy', as
   try {
     const serviceUrl = await waitForServiceUrl(root);
     assert.equal(serviceUrl, `http://127.0.0.1:${port}`);
+    await waitForHealthyService(serviceUrl);
+    process.kill(entry.pid, 'SIGTERM');
+    await waitForServiceFilesRemoved(root);
   } finally {
     stopDetachedProcess(entry.pid);
   }
@@ -243,4 +246,43 @@ async function waitForServiceUrl(root, { timeoutMs = 1000 } = {}) {
     await new Promise((resolve) => setTimeout(resolve, 10));
   }
   assert.fail('timed out waiting for daemon service-url file');
+}
+
+async function waitForHealthyService(url, { timeoutMs = 1000 } = {}) {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < timeoutMs) {
+    try {
+      const response = await fetch(`${url}/api/health`);
+      if (response.ok && (await response.json()).name === 'evo-bypassd') {
+        return;
+      }
+    } catch {
+      // The daemon may still be binding.
+    }
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  assert.fail('timed out waiting for daemon health');
+}
+
+async function waitForServiceFilesRemoved(root, { timeoutMs = 1000 } = {}) {
+  const serviceUrlPath = path.join(root, '.bypass', 'service', 'service-url');
+  const servicePidPath = path.join(root, '.bypass', 'service', 'service.pid');
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < timeoutMs) {
+    if (!await fileExists(serviceUrlPath) && !await fileExists(servicePidPath)) {
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  assert.fail('timed out waiting for daemon service files to be removed');
+}
+
+async function fileExists(filePath) {
+  try {
+    await fs.stat(filePath);
+    return true;
+  } catch (error) {
+    if (error.code === 'ENOENT') return false;
+    throw error;
+  }
 }

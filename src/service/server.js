@@ -3,6 +3,7 @@ import http from 'node:http';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { resolveServicePaths } from '../core/service-paths.js';
+import { resolveSessionPaths } from '../core/session-paths.js';
 import { enqueueJob, listJobs, readJob, resetStaleRunningJobs } from './job-store.js';
 import { runOneReviewJob } from './review-worker.js';
 import { listSessions, getSessionDetail } from '../viewer/session-store.js';
@@ -43,6 +44,7 @@ export async function startServiceServer({
   const resolvedPort = serverPort(server, port);
   const url = serviceUrl({ host: safeHost, port: resolvedPort });
   await writeServiceFiles({ root, url });
+  let closePromise;
 
   let workerTimer;
   let workerInFlight = false;
@@ -65,7 +67,10 @@ export async function startServiceServer({
     host: safeHost,
     port: resolvedPort,
     url,
-    close: () => closeService({ root, server, workerTimer, url, pid: process.pid }),
+    close: () => {
+      closePromise ??= closeService({ root, server, workerTimer, url, pid: process.pid });
+      return closePromise;
+    },
   };
 }
 
@@ -123,6 +128,7 @@ async function handleRequest({ request, response, root, version, serverUrl }) {
 
   if (request.method === 'POST' && url.pathname.startsWith('/api/sessions/') && url.pathname.endsWith('/apply')) {
     const sessionId = safeDecodePathSegment(url.pathname.slice('/api/sessions/'.length, -'/apply'.length));
+    validateSessionId({ root, sessionId });
     await handleApply({ response, root, sessionId, body: await readJsonBody(request) });
     return;
   }
@@ -199,6 +205,14 @@ function safeDecodePathSegment(value) {
       throw new HttpError(400, 'Malformed path encoding');
     }
     throw error;
+  }
+}
+
+function validateSessionId({ root, sessionId }) {
+  try {
+    resolveSessionPaths({ root, sessionId });
+  } catch (error) {
+    throw mapValidationError(error);
   }
 }
 

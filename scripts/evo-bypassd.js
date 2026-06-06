@@ -4,16 +4,41 @@ import { startServiceServer } from '../src/service/server.js';
 
 const args = parseArgs(process.argv.slice(2));
 const root = args.root || process.cwd();
+let service;
+let shutdownPromise;
 
 try {
   const config = await readBypassConfig({ root });
   const host = args.host || config.service.host || '127.0.0.1';
   const port = args.port ?? config.service.port ?? 8765;
-  const service = await startServiceServer({ root, host, port });
+  service = await startServiceServer({ root, host, port });
+  process.once('SIGTERM', () => {
+    shutdown(0);
+  });
+  process.once('SIGINT', () => {
+    shutdown(0);
+  });
   console.log(service.url);
 } catch (error) {
   console.error(error.message || String(error));
   process.exitCode = 1;
+}
+
+function shutdown(exitCode) {
+  shutdownPromise ??= closeService()
+    .catch((error) => {
+      console.error(error.message || String(error));
+      exitCode = 1;
+    })
+    .finally(() => {
+      process.exit(exitCode);
+    });
+}
+
+async function closeService() {
+  if (service) {
+    await service.close();
+  }
 }
 
 function parseArgs(argv) {

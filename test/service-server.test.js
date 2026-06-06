@@ -96,6 +96,18 @@ test('service server keeps apply route isolated until Task 7 exists', async () =
   }
 });
 
+test('service apply route rejects unsafe session ids before apply implementation', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-service-'));
+  const service = await startServiceServer({ root, host: '127.0.0.1', port: 0, startWorker: false });
+  try {
+    const result = await postJson(`${service.url}/api/sessions/..%2fsecret/apply`, {});
+    assert.equal(result.response.status, 400);
+    assert.match(result.body.error, /safe path segment/i);
+  } finally {
+    await service.close();
+  }
+});
+
 test('service close stops accepting requests', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-service-'));
   const service = await startServiceServer({ root, host: '127.0.0.1', port: 0, startWorker: false });

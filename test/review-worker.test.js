@@ -3,8 +3,10 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { resolveServicePaths } from '../src/core/service-paths.js';
 import { enqueueJob, readJob } from '../src/service/job-store.js';
 import { runOneReviewJob } from '../src/service/review-worker.js';
+import { notifyKnowledgeReady } from '../src/service/notifier.js';
 import { resolveSessionPaths } from '../src/core/session-paths.js';
 
 test('runOneReviewJob completes review artifacts and notifies for knowledge updates', async () => {
@@ -89,8 +91,163 @@ test('runOneReviewJob completes review artifacts and notifies for knowledge upda
     host: '127.0.0.1',
     port: 9988,
     sessionId: 'sess_notify',
-    openBrowser: true
+    openBrowser: true,
+    url: 'http://127.0.0.1:9988/sessions/sess_notify?review=ready'
   }]);
+});
+
+test('runOneReviewJob uses job session id when reviewer returns a conflicting session id', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-worker-'));
+  await writeSession(root, 'sess_claimed', {
+    events: [event({ id: 'evt_claimed', sessionId: 'sess_claimed' })]
+  });
+  await enqueueJob({ root, sessionId: 'sess_claimed', runtime: 'codex' });
+
+  const result = await runOneReviewJob({
+    root,
+    reviewer: async () => ({
+      raw: '{"session_id":"wrong"}',
+      parsed: {
+        session_id: 'sess_wrong',
+        sessionId: 'sess_wrong_camel',
+        summary: 'No action needed.',
+        retrospective: { outcome: 'completed', quality: 'smooth', findings: [] }
+      }
+    })
+  });
+
+  assert.equal(result.status, 'succeeded');
+  const paths = resolveSessionPaths({ root, sessionId: 'sess_claimed' });
+  const retrospective = JSON.parse(await fs.readFile(paths.retrospectivePath, 'utf8'));
+  assert.equal(retrospective.session_id, 'sess_claimed');
+  await assert.rejects(
+    fs.readFile(resolveSessionPaths({ root, sessionId: 'sess_wrong' }).retrospectivePath, 'utf8'),
+    { code: 'ENOENT' }
+  );
+});
+
+test('notifyKnowledgeReady returns a ready review deep link and opens best-effort when enabled', () => {
+  const opened = [];
+
+  const result = notifyKnowledgeReady({
+    host: '127.0.0.1',
+    port: 4321,
+    sessionId: 'sess_link',
+    opener: (url) => opened.push(url)
+  });
+
+  assert.equal(result.url, 'http://127.0.0.1:4321/sessions/sess_link?review=ready');
+  assert.deepEqual(opened, [result.url]);
+});
+
+test('runOneReviewJob notifies using the running service url instead of stale config', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-worker-'));
+  await fs.writeFile(path.join(root, 'AGENTS.md'), 'Existing knowledge.\n');
+  await writeConfig(root, {
+    service: { host: '127.0.0.1', port: 1111, openBrowserOnKnowledge: true }
+  });
+  const servicePaths = resolveServicePaths({ root });
+  await fs.mkdir(servicePaths.serviceDir, { recursive: true });
+  await fs.writeFile(servicePaths.serviceUrlPath, 'http://127.0.0.1:2222\n');
+  await writeSession(root, 'sess_live_url', {
+    events: [event({ id: 'evt_live_url', sessionId: 'sess_live_url', signals: ['project_convention'] })]
+  });
+  await enqueueJob({ root, sessionId: 'sess_live_url', runtime: 'codex' });
+  const notifications = [];
+
+  await runOneReviewJob({
+    root,
+    reviewer: knowledgeReviewer('evt_live_url'),
+    notify: async (payload) => notifications.push(payload)
+  });
+
+  assert.equal(notifications[0].host, '127.0.0.1');
+  assert.equal(notifications[0].port, 2222);
+  assert.equal(notifications[0].url, 'http://127.0.0.1:2222/sessions/sess_live_url?review=ready');
+});
+
+test('runOneReviewJob keeps valid events when JSONL contains malformed lines', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-worker-'));
+  await fs.writeFile(path.join(root, 'AGENTS.md'), 'Existing knowledge.\n');
+  const paths = await writeSession(root, 'sess_malformed', {
+    events: [event({ id: 'evt_valid', sessionId: 'sess_malformed', signals: ['project_convention'] })]
+  });
+  await fs.appendFile(paths.eventsPath, '{bad json\n');
+  await enqueueJob({ root, sessionId: 'sess_malformed', runtime: 'codex' });
+
+  const result = await runOneReviewJob({
+    root,
+    reviewer: knowledgeReviewer('evt_valid')
+  });
+
+  assert.equal(result.status, 'succeeded');
+  assert.match(await fs.readFile(paths.reviewerLogPath, 'utf8'), /Malformed event line count: 1/);
+});
+
+test('runOneReviewJob does not preview symlink targets outside root', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-worker-'));
+  const outsideDir = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-outside-'));
+  const outsideTarget = path.join(outsideDir, 'AGENTS.md');
+  await fs.writeFile(outsideTarget, 'SECRET OUTSIDE KNOWLEDGE\n');
+  await fs.symlink(outsideTarget, path.join(root, 'AGENTS.md'));
+  await writeSession(root, 'sess_symlink', {
+    events: [event({ id: 'evt_symlink', sessionId: 'sess_symlink' })]
+  });
+  await enqueueJob({ root, sessionId: 'sess_symlink', runtime: 'codex' });
+  let candidate;
+
+  await runOneReviewJob({
+    root,
+    reviewer: async ({ payload }) => {
+      candidate = payload.candidates[0];
+      return {
+        raw: '{}',
+        parsed: {
+          summary: 'No action needed.',
+          retrospective: { outcome: 'completed', quality: 'smooth', findings: [] }
+        }
+      };
+    }
+  });
+
+  assert.equal(candidate.target, path.join(root, 'AGENTS.md'));
+  assert.equal(candidate.target_exists, false);
+  assert.equal(candidate.target_preview, '');
+});
+
+test('runOneReviewJob does not write retrospective artifacts after losing its lease', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-worker-'));
+  await writeSession(root, 'sess_stale', {
+    events: [event({ id: 'evt_stale', sessionId: 'sess_stale' })]
+  });
+  await enqueueJob({ root, sessionId: 'sess_stale', runtime: 'codex' });
+  const servicePaths = resolveServicePaths({ root });
+
+  const result = await runOneReviewJob({
+    root,
+    reviewer: async () => {
+      const jobPath = path.join(servicePaths.jobsDir, 'job_sess_stale.json');
+      const job = JSON.parse(await fs.readFile(jobPath, 'utf8'));
+      await fs.writeFile(jobPath, `${JSON.stringify({
+        ...job,
+        lease_token: 'new-owner-token',
+        lease_expires_at: new Date(Date.now() + 60000).toISOString()
+      }, null, 2)}\n`);
+      return {
+        raw: '{}',
+        parsed: {
+          summary: 'No action needed.',
+          retrospective: { outcome: 'completed', quality: 'smooth', findings: [] }
+        }
+      };
+    }
+  });
+
+  assert.equal(result.status, 'failed');
+  assert.match(result.error, /stale job lease/);
+  const paths = resolveSessionPaths({ root, sessionId: 'sess_stale' });
+  await assert.rejects(fs.readFile(paths.retrospectivePath, 'utf8'), { code: 'ENOENT' });
+  await assert.rejects(fs.readFile(paths.retrospectiveMarkdownPath, 'utf8'), { code: 'ENOENT' });
 });
 
 test('runOneReviewJob fails reviewer errors without rules fallback or notification', async () => {
@@ -168,6 +325,7 @@ async function writeSession(root, sessionId, { metadata = {}, events = [] }) {
     ...metadata
   }, null, 2)}\n`);
   await fs.writeFile(paths.eventsPath, events.map((item) => JSON.stringify(item)).join('\n') + (events.length ? '\n' : ''));
+  return paths;
 }
 
 function event({ id, sessionId, summary = 'A useful session event.', signals = [], paths = [] }) {
@@ -194,4 +352,30 @@ function finding({ evidence, action }) {
     recommendation: 'Save the convention for future sessions.',
     action
   };
+}
+
+function knowledgeReviewer(eventId) {
+  return async ({ payload }) => ({
+    raw: '{}',
+    parsed: {
+      summary: 'Found one durable convention.',
+      retrospective: {
+        outcome: 'completed',
+        quality: 'minor_issues',
+        findings: [
+          finding({
+            evidence: [eventId],
+            action: {
+              type: 'update_knowledge',
+              confidence: 'high',
+              target: payload.candidates[0].target,
+              target_reason: payload.candidates[0].target_reason,
+              proposed_text: 'Project convention: keep async review tests focused.',
+              rationale: 'Future service work should keep tests focused.'
+            }
+          })
+        ]
+      }
+    }
+  });
 }

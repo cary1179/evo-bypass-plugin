@@ -1,12 +1,12 @@
 import { spawn } from 'node:child_process';
 import { viewerUrl } from '../viewer/server.js';
 
-export function notifyKnowledgeReady({ host, port, sessionId, openBrowser = true, opener = openUrl } = {}) {
-  const url = viewerUrl({ host, port, sessionId });
+export function notifyKnowledgeReady({ host, port, sessionId, openBrowser = true, opener = openUrl, url } = {}) {
+  const resolvedUrl = url || withReadyQuery(viewerUrl({ host, port, sessionId }));
   if (openBrowser) {
-    opener(url);
+    opener(resolvedUrl);
   }
-  return { url };
+  return { url: resolvedUrl };
 }
 
 function openUrl(url) {
@@ -25,4 +25,10 @@ function openUrl(url) {
   });
   child.on('error', () => {});
   child.unref();
+}
+
+function withReadyQuery(url) {
+  const parsed = new URL(url);
+  parsed.searchParams.set('review', 'ready');
+  return parsed.href;
 }

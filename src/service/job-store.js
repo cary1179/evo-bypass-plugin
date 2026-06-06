@@ -83,6 +83,27 @@ export async function completeJob({ root = process.cwd(), jobId, leaseToken, loc
   });
 }
 
+export async function completeJobWithArtifacts({
+  root = process.cwd(),
+  jobId,
+  leaseToken,
+  lockStaleMs = 60000,
+  writeArtifacts,
+}) {
+  if (typeof writeArtifacts !== 'function') {
+    throw new Error('writeArtifacts callback is required');
+  }
+
+  return updateJob({
+    root,
+    jobId,
+    leaseToken,
+    lockStaleMs,
+    beforeWrite: writeArtifacts,
+    patch: { status: 'succeeded', finished_at: new Date().toISOString(), error: '' },
+  });
+}
+
 export async function skipJob({ root = process.cwd(), jobId, leaseToken, lockStaleMs = 60000, error }) {
   return updateJob({
     root,
@@ -163,7 +184,7 @@ export async function resetStaleRunningJobs({ root = process.cwd(), now = new Da
   return reset;
 }
 
-async function updateJob({ root, jobId, leaseToken, lockStaleMs, patch }) {
+async function updateJob({ root, jobId, leaseToken, lockStaleMs, patch, beforeWrite }) {
   const paths = resolveServicePaths({ root });
   const release = await tryAcquireJobLock(paths.jobsDir, jobId, { lockStaleMs });
   if (!release) {
@@ -174,6 +195,9 @@ async function updateJob({ root, jobId, leaseToken, lockStaleMs, patch }) {
     const job = await readJob({ root, jobId });
     if ((job.lease_token || leaseToken !== undefined) && job.lease_token !== leaseToken) {
       throw new Error('stale job lease');
+    }
+    if (beforeWrite) {
+      await beforeWrite(job);
     }
     const updated = { ...job, ...patch, lease_expires_at: '', lease_token: '' };
     await writeJob(paths.jobsDir, updated);

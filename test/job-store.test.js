@@ -7,6 +7,7 @@ import { resolveServicePaths } from '../src/core/service-paths.js';
 import {
   claimNextJob,
   completeJob,
+  completeJobWithArtifacts,
   enqueueJob,
   failJob,
   listJobs,
@@ -93,6 +94,37 @@ test('completeJob and failJob set terminal status and clear leases', async () =>
   assert.equal(errored.lease_expires_at, '');
   assert.equal(errored.lease_token, '');
   assert.equal(errored.error, 'bad json');
+});
+
+test('completeJobWithArtifacts writes artifacts only for the current lease', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-jobs-'));
+  const artifactPath = path.join(root, 'artifact.txt');
+  await enqueueJob({ root, sessionId: 'sess_artifact', runtime: 'codex' });
+  const firstClaim = await claimNextJob({ root, leaseMs: 1 });
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  await resetStaleRunningJobs({ root, now: new Date() });
+  const secondClaim = await claimNextJob({ root, leaseMs: 60000 });
+
+  await assert.rejects(
+    () => completeJobWithArtifacts({
+      root,
+      jobId: firstClaim.id,
+      leaseToken: firstClaim.lease_token,
+      writeArtifacts: async () => fs.writeFile(artifactPath, 'stale')
+    }),
+    /stale job lease/
+  );
+  await assert.rejects(fs.readFile(artifactPath, 'utf8'), { code: 'ENOENT' });
+
+  const completed = await completeJobWithArtifacts({
+    root,
+    jobId: secondClaim.id,
+    leaseToken: secondClaim.lease_token,
+    writeArtifacts: async () => fs.writeFile(artifactPath, 'current')
+  });
+
+  assert.equal(completed.status, 'succeeded');
+  assert.equal(await fs.readFile(artifactPath, 'utf8'), 'current');
 });
 
 test('skipJob sets skipped status and listJobs returns readable jobs', async () => {

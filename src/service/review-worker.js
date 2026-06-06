@@ -4,11 +4,12 @@ import { resolveSessionPaths } from '../core/session-paths.js';
 import { readBypassConfig } from '../core/config.js';
 import { extractKnowledgeActions } from '../core/retrospective-schema.js';
 import { routeKnowledgeTarget } from '../knowledge-routing.js';
-import { claimNextJob, completeJob, failJob, skipJob } from './job-store.js';
+import { claimNextJob, completeJobWithArtifacts, failJob, skipJob } from './job-store.js';
 import { buildReviewerPrompt } from './reviewer-prompt.js';
 import { runReviewerCli } from './reviewer-runner.js';
 import { validateReviewerResult } from './reviewer-validation.js';
 import { notifyKnowledgeReady } from './notifier.js';
+import { readServiceUrl, serviceUrl } from './service-client.js';
 
 export async function runOneReviewJob({
   root = process.cwd(),
@@ -25,7 +26,7 @@ export async function runOneReviewJob({
 
   try {
     const metadata = await readJson(paths.metadataPath, {});
-    const events = await readEvents(paths.eventsPath);
+    const { events, malformedCount } = await readEvents(paths.eventsPath);
     const config = await readBypassConfig({ root });
     const candidates = await buildCandidates({ root, events, configuredTarget: config.knowledgeTarget });
     const payload = {
@@ -50,21 +51,28 @@ export async function runOneReviewJob({
     const result = validateReviewerResult({
       root,
       sessionId: job.session_id,
-      parsed: review.parsed,
+      parsed: withJobSessionId({ parsed: review.parsed, sessionId: job.session_id }),
       events,
       candidates
     });
     result.retrospective_report_path = paths.retrospectiveMarkdownPath;
 
-    await writeArtifacts({ paths, result, review });
-    await completeJob({ root, jobId: job.id, leaseToken: job.lease_token });
+    await completeJobWithArtifacts({
+      root,
+      jobId: job.id,
+      leaseToken: job.lease_token,
+      writeArtifacts: async () => writeArtifacts({ paths, result, review, malformedCount })
+    });
 
     if (extractKnowledgeActions(result).length > 0) {
-      await notifyBestEffort(notify, {
+      const notification = await notificationPayload({
         root,
-        host: config.service.host,
-        port: config.service.port,
-        sessionId: job.session_id,
+        config,
+        sessionId: job.session_id
+      });
+      await notifyBestEffort(notify, {
+        ...notification,
+        root,
         openBrowser: config.service.openBrowserOnKnowledge
       });
     }
@@ -72,12 +80,7 @@ export async function runOneReviewJob({
     return { status: 'succeeded', result };
   } catch (error) {
     await writeFailureLog({ paths, error });
-    await failJob({
-      root,
-      jobId: job.id,
-      leaseToken: job.lease_token,
-      error: errorMessage(error)
-    });
+    await failClaimedJob({ root, job, error });
     return { status: 'failed', error: errorMessage(error) };
   }
 }
@@ -94,8 +97,8 @@ async function buildCandidates({ root, events, configuredTarget }) {
       relative_target: relativeTarget && !relativeTarget.startsWith('..') && !path.isAbsolute(relativeTarget)
         ? relativeTarget
         : route.target,
-      target_exists: await fileExists(route.target),
-      target_preview: await filePreview(route.target)
+      target_exists: await safeFileExists({ root, filePath: route.target }),
+      target_preview: await safeFilePreview({ root, filePath: route.target })
     });
   }
   return candidates;
@@ -106,16 +109,21 @@ async function readEvents(eventsPath) {
   try {
     content = await fs.readFile(eventsPath, 'utf8');
   } catch (error) {
-    if (error.code === 'ENOENT') return [];
+    if (error.code === 'ENOENT') return { events: [], malformedCount: 0 };
     throw error;
   }
 
   const events = [];
+  let malformedCount = 0;
   for (const line of content.split('\n')) {
     if (!line.trim()) continue;
-    events.push(JSON.parse(line));
+    try {
+      events.push(JSON.parse(line));
+    } catch {
+      malformedCount += 1;
+    }
   }
-  return events;
+  return { events, malformedCount };
 }
 
 async function readJson(filePath, fallback) {
@@ -127,31 +135,60 @@ async function readJson(filePath, fallback) {
   }
 }
 
-async function fileExists(filePath) {
-  try {
-    const stat = await fs.stat(filePath);
-    return stat.isFile();
-  } catch (error) {
-    if (error.code === 'ENOENT') return false;
-    throw error;
-  }
+async function safeFileExists({ root, filePath }) {
+  const info = await safeFileInfo({ root, filePath });
+  return info.exists;
 }
 
-async function filePreview(filePath, limit = 2000) {
-  try {
-    const content = await fs.readFile(filePath, 'utf8');
-    return content.slice(0, limit);
-  } catch (error) {
-    if (error.code === 'ENOENT') return '';
-    throw error;
+async function safeFilePreview({ root, filePath, limit = 2000 }) {
+  const info = await safeFileInfo({ root, filePath });
+  if (!info.exists) {
+    return '';
   }
+  const content = await fs.readFile(info.realPath, 'utf8');
+  return content.slice(0, limit);
 }
 
-async function writeArtifacts({ paths, result, review }) {
+async function safeFileInfo({ root, filePath }) {
+  const rootPath = await fs.realpath(root);
+  const targetPath = path.resolve(filePath);
+
+  let lstat;
+  try {
+    lstat = await fs.lstat(targetPath);
+  } catch (error) {
+    if (error.code === 'ENOENT') return { exists: false };
+    throw error;
+  }
+  if (!lstat.isFile() && !lstat.isSymbolicLink()) {
+    return { exists: false };
+  }
+
+  let realPath;
+  try {
+    realPath = await fs.realpath(targetPath);
+  } catch (error) {
+    if (error.code === 'ENOENT') return { exists: false };
+    throw error;
+  }
+  if (!isInsideRoot({ rootPath, targetPath: realPath })) {
+    return { exists: false };
+  }
+
+  const stat = await fs.stat(realPath);
+  return { exists: stat.isFile(), realPath };
+}
+
+function isInsideRoot({ rootPath, targetPath }) {
+  const relative = path.relative(rootPath, targetPath);
+  return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
+}
+
+async function writeArtifacts({ paths, result, review, malformedCount }) {
   await fs.mkdir(paths.sessionDir, { recursive: true });
   await fs.writeFile(paths.retrospectivePath, `${JSON.stringify(result, null, 2)}\n`);
   await fs.writeFile(paths.retrospectiveMarkdownPath, formatRetrospectiveMarkdown(result));
-  await fs.writeFile(paths.reviewerLogPath, reviewerLog({ result, review }));
+  await fs.writeFile(paths.reviewerLogPath, reviewerLog({ result, review, malformedCount }));
 }
 
 async function writeFailureLog({ paths, error }) {
@@ -215,16 +252,55 @@ function formatRetrospectiveMarkdown(result) {
   return `${lines.join('\n')}\n`;
 }
 
-function reviewerLog({ result, review }) {
+function reviewerLog({ result, review, malformedCount = 0 }) {
   const lines = [
     result.summary,
     `Finding count: ${result.retrospective.findings.length}`,
-    `Knowledge action count: ${extractKnowledgeActions(result).length}`
+    `Knowledge action count: ${extractKnowledgeActions(result).length}`,
+    `Malformed event line count: ${malformedCount}`
   ];
   if (typeof review.raw === 'string' && review.raw.trim()) {
     lines.push('', 'Raw reviewer output:', review.raw.trim());
   }
   return `${lines.join('\n')}\n`;
+}
+
+function withJobSessionId({ parsed, sessionId }) {
+  return {
+    ...parsed,
+    session_id: sessionId,
+    sessionId
+  };
+}
+
+async function notificationPayload({ root, config, sessionId }) {
+  const fallbackUrl = serviceUrl(config.service);
+  const baseUrl = await readServiceUrl({ root, fallbackUrl });
+  const parsed = new URL(baseUrl);
+  const host = parsed.hostname;
+  const port = Number(parsed.port);
+  const { url } = notifyKnowledgeReady({
+    host,
+    port,
+    sessionId,
+    openBrowser: false
+  });
+  return { host, port, sessionId, url };
+}
+
+async function failClaimedJob({ root, job, error }) {
+  try {
+    await failJob({
+      root,
+      jobId: job.id,
+      leaseToken: job.lease_token,
+      error: errorMessage(error)
+    });
+  } catch (failError) {
+    if (!/stale job lease/.test(errorMessage(failError))) {
+      throw failError;
+    }
+  }
 }
 
 async function notifyBestEffort(notify, payload) {

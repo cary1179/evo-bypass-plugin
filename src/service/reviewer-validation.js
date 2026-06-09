@@ -1,5 +1,6 @@
 import path from 'node:path';
 import { normalizeRetrospectiveResult } from '../core/retrospective-schema.js';
+import { hasReusableProjectConvention } from '../project-convention.js';
 
 const OUTCOMES = new Set(['completed', 'partial', 'failed', 'unknown']);
 const QUALITIES = new Set(['smooth', 'minor_issues', 'significant_issues']);
@@ -81,6 +82,9 @@ function validateUpdateKnowledgeAction({ root, action, candidateTargets }) {
   const relative = path.relative(rootPath, targetPath);
   if (relative === '' || relative.startsWith('..') || path.isAbsolute(relative)) {
     throw new Error('update_knowledge target must stay inside root');
+  }
+  if (!hasReusableProjectConvention(action.proposed_text)) {
+    throw new Error('update_knowledge proposed_text must be a reusable project convention');
   }
 }
 

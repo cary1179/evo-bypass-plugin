@@ -5,7 +5,7 @@ import { startViewerServer, viewerUrl } from '../src/viewer/server.js';
 const args = parseArgs(process.argv.slice(2));
 const root = args.root || process.cwd();
 const host = args.host || '127.0.0.1';
-const port = args.port === undefined ? 8765 : Number(args.port);
+const port = args.port === undefined ? 8766 : Number(args.port);
 const sessionId = args.session;
 const openMode = args.openMode || 'url';
 

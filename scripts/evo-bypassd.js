@@ -10,7 +10,7 @@ let shutdownPromise;
 try {
   const config = await readBypassConfig({ root });
   const host = args.host || config.service.host || '127.0.0.1';
-  const port = args.port ?? config.service.port ?? 8765;
+  const port = args.port ?? config.service.port ?? 8766;
   service = await startServiceServer({ root, host, port });
   process.once('SIGTERM', () => {
     shutdown(0);

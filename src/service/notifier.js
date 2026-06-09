@@ -9,7 +9,7 @@ export function notifyKnowledgeReady({ host, port, sessionId, openBrowser = true
   return { url: resolvedUrl };
 }
 
-function openUrl(url) {
+export function openUrl(url) {
   const command = process.platform === 'darwin'
     ? 'open'
     : process.platform === 'win32'

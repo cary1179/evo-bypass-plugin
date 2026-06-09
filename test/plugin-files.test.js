@@ -41,7 +41,9 @@ test('retrospective schema is shipped with package files', async () => {
 
   assert.equal(schema.title, 'Evo Bypass Task Retrospective');
   assert.equal(schema.properties.retrospective.properties.findings.items.properties.action.properties.type.enum.includes('update_knowledge'), true);
-  assert.equal(schema.properties.retrospective.properties.findings.items.properties.action.if.properties.type.const, 'update_knowledge');
-  assert.equal(schema.properties.retrospective.properties.findings.items.properties.action.then.required.includes('target'), true);
-  assert.equal(schema.properties.retrospective.properties.findings.items.properties.action.then.required.includes('proposed_text'), true);
+  assert.equal(schema.properties.retrospective.properties.findings.items.properties.action.required.includes('target'), true);
+  assert.equal(schema.properties.retrospective.properties.findings.items.properties.action.required.includes('proposed_text'), true);
+  assert.deepEqual(schema.properties.retrospective.properties.findings.items.properties.action.properties.target.type, ['string', 'null']);
+  assert.equal(schema.properties.retrospective.properties.findings.items.properties.action.if, undefined);
+  assert.equal(schema.properties.retrospective.properties.findings.items.properties.action.then, undefined);
 });

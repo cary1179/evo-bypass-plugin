@@ -13,7 +13,7 @@ import {
 } from '../src/service/service-client.js';
 
 test('serviceUrl formats service host and port', () => {
-  assert.equal(serviceUrl({ host: '127.0.0.1', port: 8765 }), 'http://127.0.0.1:8765');
+  assert.equal(serviceUrl({ host: '127.0.0.1', port: 8766 }), 'http://127.0.0.1:8766');
 });
 
 test('readServiceUrl prefers environment then service-url file then fallback', async () => {
@@ -36,7 +36,7 @@ test('readServiceUrl ignores remote environment URL', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-service-url-'));
   const previous = process.env.EVO_BYPASS_SERVICE_URL;
   try {
-    process.env.EVO_BYPASS_SERVICE_URL = 'http://example.com:8765';
+    process.env.EVO_BYPASS_SERVICE_URL = 'http://example.com:8766';
     assert.equal(await readServiceUrl({ root, fallbackUrl: 'http://127.0.0.1:2222' }), 'http://127.0.0.1:2222');
   } finally {
     restoreEnv('EVO_BYPASS_SERVICE_URL', previous);
@@ -49,7 +49,7 @@ test('readServiceUrl ignores remote service-url file', async () => {
   try {
     delete process.env.EVO_BYPASS_SERVICE_URL;
     await fs.mkdir(path.join(root, '.bypass', 'service'), { recursive: true });
-    await fs.writeFile(path.join(root, '.bypass', 'service', 'service-url'), 'http://10.0.0.20:8765\n');
+    await fs.writeFile(path.join(root, '.bypass', 'service', 'service-url'), 'http://10.0.0.20:8766\n');
     assert.equal(await readServiceUrl({ root, fallbackUrl: 'http://127.0.0.1:2222' }), 'http://127.0.0.1:2222');
   } finally {
     restoreEnv('EVO_BYPASS_SERVICE_URL', previous);
@@ -61,7 +61,7 @@ test('readServiceUrl ignores remote fallback URL', async () => {
   const previous = process.env.EVO_BYPASS_SERVICE_URL;
   try {
     delete process.env.EVO_BYPASS_SERVICE_URL;
-    assert.equal(await readServiceUrl({ root, fallbackUrl: 'http://example.com:8765' }), 'http://127.0.0.1:8765');
+    assert.equal(await readServiceUrl({ root, fallbackUrl: 'http://example.com:8766' }), 'http://127.0.0.1:8766');
   } finally {
     restoreEnv('EVO_BYPASS_SERVICE_URL', previous);
   }
@@ -71,11 +71,11 @@ test('readServiceUrl accepts loopback service URLs', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-service-url-'));
   const previous = process.env.EVO_BYPASS_SERVICE_URL;
   try {
-    process.env.EVO_BYPASS_SERVICE_URL = 'http://localhost:8765';
-    assert.equal(await readServiceUrl({ root, fallbackUrl: 'http://127.0.0.1:2222' }), 'http://localhost:8765');
+    process.env.EVO_BYPASS_SERVICE_URL = 'http://localhost:8766';
+    assert.equal(await readServiceUrl({ root, fallbackUrl: 'http://127.0.0.1:2222' }), 'http://localhost:8766');
 
-    process.env.EVO_BYPASS_SERVICE_URL = 'http://[::1]:8765';
-    assert.equal(await readServiceUrl({ root, fallbackUrl: 'http://127.0.0.1:2222' }), 'http://[::1]:8765');
+    process.env.EVO_BYPASS_SERVICE_URL = 'http://[::1]:8766';
+    assert.equal(await readServiceUrl({ root, fallbackUrl: 'http://127.0.0.1:2222' }), 'http://[::1]:8766');
   } finally {
     restoreEnv('EVO_BYPASS_SERVICE_URL', previous);
   }

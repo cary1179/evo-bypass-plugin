@@ -5,9 +5,9 @@ import path from 'node:path';
 import { resolveServicePaths } from '../core/service-paths.js';
 
 const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '[::1]']);
-const LOCAL_FALLBACK_URL = 'http://127.0.0.1:8765';
+const LOCAL_FALLBACK_URL = 'http://127.0.0.1:8766';
 
-export function serviceUrl({ host = '127.0.0.1', port = 8765 } = {}) {
+export function serviceUrl({ host = '127.0.0.1', port = 8766 } = {}) {
   return `http://${host}:${port}`;
 }
 

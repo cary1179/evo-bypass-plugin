@@ -1,5 +1,6 @@
 .worktrees/
 node_modules/
+scripts/.venv/
 npm-debug.log*
 .DS_Store
 .bypass/sessions/

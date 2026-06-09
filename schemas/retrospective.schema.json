@@ -2,12 +2,14 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Evo Bypass Task Retrospective",
   "type": "object",
-  "required": ["session_id", "summary", "retrospective"],
+  "additionalProperties": false,
+  "required": ["session_id", "summary", "retrospective", "retrospective_report_path"],
   "properties": {
     "session_id": { "type": "string" },
     "summary": { "type": "string" },
     "retrospective": {
       "type": "object",
+      "additionalProperties": false,
       "required": ["outcome", "quality", "findings"],
       "properties": {
         "outcome": { "enum": ["completed", "partial", "failed", "unknown"] },
@@ -16,6 +18,7 @@
           "type": "array",
           "items": {
             "type": "object",
+            "additionalProperties": false,
             "required": ["id", "category", "severity", "evidence", "diagnosis", "recommendation", "action"],
             "properties": {
               "id": { "type": "string" },
@@ -26,22 +29,15 @@
               "recommendation": { "type": "string", "minLength": 1 },
               "action": {
                 "type": "object",
-                "required": ["type", "confidence"],
+                "additionalProperties": false,
+                "required": ["type", "confidence", "target", "target_reason", "proposed_text", "rationale"],
                 "properties": {
                   "type": { "enum": ["update_knowledge", "create_skill", "improve_code", "adjust_agent_usage", "fix_environment", "no_action"] },
                   "confidence": { "enum": ["low", "medium", "high"] },
-                  "target": { "type": "string", "minLength": 1 },
-                  "target_reason": { "type": "string" },
-                  "proposed_text": { "type": "string", "minLength": 1 },
-                  "rationale": { "type": "string" }
-                },
-                "if": {
-                  "properties": {
-                    "type": { "const": "update_knowledge" }
-                  }
-                },
-                "then": {
-                  "required": ["target", "proposed_text"]
+                  "target": { "type": ["string", "null"] },
+                  "target_reason": { "type": ["string", "null"] },
+                  "proposed_text": { "type": ["string", "null"] },
+                  "rationale": { "type": ["string", "null"] }
                 }
               }
             }
@@ -49,6 +45,6 @@
         }
       }
     },
-    "retrospective_report_path": { "type": "string" }
+    "retrospective_report_path": { "type": ["string", "null"] }
   }
 }

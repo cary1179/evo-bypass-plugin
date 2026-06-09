@@ -190,15 +190,15 @@
           </div>
           <aside>
             <section class="panel">
-              <div class="panel-head"><h2 class="panel-title">Review findings</h2><span class="muted" id="findingCount"></span></div>
+              <div class="panel-head"><h2 class="panel-title">Suggestions &amp; findings</h2><span class="muted" id="findingCount"></span></div>
               <div class="panel-body" id="findingsPanel"></div>
             </section>
             <section class="panel">
-              <div class="panel-head"><h2 class="panel-title">Selected event</h2></div>
+              <div class="panel-head"><h2 class="panel-title">Event detail</h2></div>
               <div class="panel-body" id="selectedEventPanel"></div>
             </section>
             <section class="panel">
-              <div class="panel-head"><h2 class="panel-title">Reviewer log</h2></div>
+              <div class="panel-head"><h2 class="panel-title">Review summary</h2></div>
               <div class="panel-body" id="reviewerPanel"></div>
             </section>
           </aside>
@@ -230,6 +230,7 @@
       runtime: "all",
       job: "all",
       actions: "all",
+      date: new URLSearchParams(location.search).get("date") || "all",
       selectedEventId: null,
       selectedActionIds: new Set(),
       edits: {},
@@ -388,17 +389,24 @@
       renderApprovalPanel(actions);
       renderRailStats();
       renderServiceStatus();
-      nodes.reviewerPanel.innerHTML = `<pre>${escapeHtml(session.reviewerLog || "No reviewer log captured.")}</pre>`;
+      const suggestionSummary = Array.isArray(session?.suggestions?.suggestions) && session.suggestions.suggestions.length > 0
+        ? session.suggestions.suggestions.map((s, i) => `<div class="action-card"><div class="pill-row">${pill(s.kind || "suggestion")}${pill(s.confidence || "unknown")}</div><p class="action-title" style="margin-top:6px">${escapeHtml(s.proposed_text || s.rationale || s.id)}</p>${s.target ? `<div class="action-target mono">\u2192 ${escapeHtml(s.target)}</div>` : ""}${s.target_reason ? `<div class="preview" style="margin-top:4px">${escapeHtml(s.target_reason)}</div>` : ""}</div>`).join("")
+        : "";
+      const logContent = session.reviewerLog ? `<pre>${escapeHtml(session.reviewerLog)}</pre>` : "";
+      nodes.reviewerPanel.innerHTML = suggestionSummary || logContent || `<div class="empty">No review data captured.</div>`;
     }
 
     function renderFindings(findings, actions) {
       nodes.findingCount.textContent = `${findings.length} findings`;
       if (!findings.length) {
-        nodes.findingsPanel.innerHTML = `<div class="empty">No retrospective findings are available yet.</div>`;
+        nodes.findingsPanel.innerHTML = `<div class="empty">No suggestions or findings for this session.</div>`;
         return;
       }
       const actionIds = new Set(actions.map((action) => action.id));
-      nodes.findingsPanel.innerHTML = findings.map((finding) => `<article class="action-card"><div class="pill-row">${pill(finding.category || "finding")}${pill(finding.severity || "unknown", severityTone(finding.severity))}${finding.action?.type ? pill(finding.action.type, actionIds.has(finding.id) ? "good" : "") : ""}</div><p class="action-title">${escapeHtml(finding.diagnosis || finding.recommendation || finding.id)}</p>${finding.recommendation ? `<div class="preview">${escapeHtml(finding.recommendation)}</div>` : ""}${(finding.evidence || []).length ? `<div class="action-target mono">Evidence: ${escapeHtml(finding.evidence.join(", "))}</div>` : ""}</article>`).join("");
+      nodes.findingsPanel.innerHTML = findings.map((finding) => {
+        const hasAction = finding.action?.type === "update_knowledge";
+        return `<article class="action-card"><div class="pill-row">${pill(finding.category || "finding")}${pill(finding.severity || "unknown", severityTone(finding.severity))}${finding.action?.type ? pill(finding.action.type, actionIds.has(finding.id) ? "good" : "") : ""}</div><p class="action-title">${escapeHtml(finding.diagnosis || finding.recommendation || finding.id)}</p>${hasAction && finding.action.target ? `<div class="action-target mono">\u2192 ${escapeHtml(finding.action.target)}</div>` : ""}${hasAction && finding.action.proposed_text ? `<details open><summary>Proposed text</summary><pre>${escapeHtml(finding.action.proposed_text)}</pre></details>` : ""}${!hasAction && finding.recommendation ? `<div class="preview">${escapeHtml(finding.recommendation)}</div>` : ""}${(finding.evidence || []).length ? `<div class="action-target mono">Evidence: ${escapeHtml(finding.evidence.join(", "))}</div>` : ""}</article>`;
+      }).join("");
     }
 
     function renderApprovalPanel(actions) {
@@ -465,10 +473,13 @@
     function renderSelectedEvent(session) {
       const selected = (session.events || []).find((item) => item.id === state.selectedEventId);
       if (!selected) {
-        nodes.selectedEventPanel.innerHTML = `<div class="empty">Select a timeline event to inspect raw fields.</div>`;
+        nodes.selectedEventPanel.innerHTML = `<div class="empty">Select a timeline event to inspect details.</div>`;
         return;
       }
-      nodes.selectedEventPanel.innerHTML = `<div class="pill-row">${pill(selected.hook)}${pill(selected.status, selected.status === "failure" ? "bad" : selected.status === "success" ? "good" : "")}${pill(selected.tool)}</div><pre>${escapeHtml(JSON.stringify(selected, null, 2))}</pre>`;
+      const summary = selected.summary || "";
+      const paths = (selected.paths || []).join(", ");
+      const evidence = (selected.evidence || []).join("\n");
+      nodes.selectedEventPanel.innerHTML = `<div class="pill-row">${pill(selected.hook)}${pill(selected.status, selected.status === "failure" ? "bad" : selected.status === "success" ? "good" : "")}${pill(selected.tool)}</div>${summary ? `<p class="action-title" style="margin-top:8px">${escapeHtml(summary)}</p>` : ""}${paths ? `<div class="action-target mono" style="margin-top:6px">Files: ${escapeHtml(paths)}</div>` : ""}${evidence ? `<details><summary>Evidence</summary><pre>${escapeHtml(evidence)}</pre></details>` : ""}<details><summary>Raw JSON</summary><pre>${escapeHtml(JSON.stringify(selected, null, 2))}</pre></details>`;
     }
 
     function renderRailStats() {
@@ -499,8 +510,20 @@
         return (!state.query || haystack.includes(state.query))
           && (state.runtime === "all" || session.runtime === state.runtime)
           && (state.job === "all" || (session.job_status || "none") === state.job)
-          && (state.actions === "all" || (state.actions === "ready" ? (session.suggestion_count || 0) > 0 : (session.suggestion_count || 0) === 0));
+          && (state.actions === "all" || (state.actions === "ready" ? (session.suggestion_count || 0) > 0 : (session.suggestion_count || 0) === 0))
+          && matchesDateFilter(session);
       });
+    }
+
+    function matchesDateFilter(session) {
+      if (state.date !== "today") return true;
+      const createdAt = Date.parse(session.created_at || "");
+      if (Number.isNaN(createdAt)) return false;
+      const created = new Date(createdAt);
+      const today = new Date();
+      return created.getFullYear() === today.getFullYear()
+        && created.getMonth() === today.getMonth()
+        && created.getDate() === today.getDate();
     }
 
     function updateKnowledgeActions(session) {
@@ -518,7 +541,18 @@
     }
 
     function retrospectiveFindings(session) {
-      return Array.isArray(session?.retrospective?.retrospective?.findings) ? session.retrospective.retrospective.findings : [];
+      const findings = Array.isArray(session?.retrospective?.retrospective?.findings) ? session.retrospective.retrospective.findings : [];
+      const suggestions = Array.isArray(session?.suggestions?.suggestions) ? session.suggestions.suggestions.map((s) => ({
+        id: s.id,
+        category: s.kind,
+        severity: "medium",
+        diagnosis: s.rationale,
+        recommendation: s.rationale,
+        evidence: s.evidence || [],
+        action: { type: "update_knowledge", confidence: s.confidence, target: s.target, proposed_text: s.proposed_text, rationale: s.rationale || s.target_reason }
+      })) : [];
+      const existing = new Set(findings.map((f) => f.id));
+      return [...findings, ...suggestions.filter((s) => !existing.has(s.id))];
     }
 
     function currentSessionId() {

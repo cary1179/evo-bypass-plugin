@@ -22,6 +22,8 @@ export async function collectEvent({ root = process.cwd(), payload, env = proces
       runtime: normalized.runtime,
       working_directory: root,
       original_prompt: normalized.prompt,
+      skip_review: normalized.skipReview,
+      skip_reason: normalized.skipReason,
       plugin_version: '0.1.0'
     };
     await fs.writeFile(paths.metadataPath, `${JSON.stringify(metadata, null, 2)}\n`);

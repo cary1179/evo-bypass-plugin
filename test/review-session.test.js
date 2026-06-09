@@ -372,7 +372,7 @@ test('review-session CLI keeps valid output when viewer startup fails', async ()
   const bypassDir = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-home-'));
   await fs.mkdir(path.join(root, '.bypass'), { recursive: true });
   await fs.writeFile(path.join(root, '.bypass', 'config.json'), `${JSON.stringify({
-    viewer: { enabled: true, openMode: 'url', port: 8765 }
+    viewer: { enabled: true, openMode: 'url', port: 8766 }
   })}\n`);
   await collectEvent({
     root,
@@ -641,6 +641,53 @@ test('reviewSession AI reviewer drops findings with unknown evidence ids', async
   }
 });
 
+test('reviewSession AI reviewer drops reviewer guardrail knowledge findings', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-'));
+  await fs.mkdir(path.join(root, '.bypass'), { recursive: true });
+  const server = await startAiReviewServer(async () => ({
+    retrospective: {
+      outcome: 'completed',
+      quality: 'minor_issues',
+      findings: [{
+        id: 'finding_guardrail',
+        category: 'knowledge',
+        severity: 'medium',
+        evidence: ['evt_ai_guardrail'],
+        diagnosis: 'AI repeated its reviewer guardrail.',
+        recommendation: 'Save it.',
+        action: {
+          type: 'update_knowledge',
+          confidence: 'high',
+          target: 'AGENTS.md',
+          proposed_text: 'Project convention: Do not suggest saving secrets, credentials, raw command output, private personal data, or one-off task details.'
+        }
+      }]
+    }
+  }));
+
+  try {
+    await writeAiReviewerConfig({ root, server });
+    await writeRawEvent(root, 'sess_ai_guardrail', {
+      id: 'evt_ai_guardrail',
+      session_id: 'sess_ai_guardrail',
+      timestamp: new Date().toISOString(),
+      hook: 'PostToolUse',
+      tool: 'Bash',
+      summary: 'Bash completed PostToolUse',
+      paths: [],
+      status: 'success',
+      signals: [],
+      evidence: ['Reviewer output was displayed.']
+    });
+
+    const result = await reviewSession({ root, sessionId: 'sess_ai_guardrail' });
+
+    assert.deepEqual(result.retrospective.findings, []);
+  } finally {
+    await server.close();
+  }
+});
+
 test('reviewSession uses rules fallback when AI retrospective shape is malformed', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-'));
   await fs.mkdir(path.join(root, '.bypass'), { recursive: true });
@@ -845,6 +892,48 @@ test('reviewSession ignores project_convention signals without actionable text',
   });
 
   const result = await reviewSession({ root, sessionId: 'sess_weak_signal' });
+
+  assert.deepEqual(result.retrospective.findings, []);
+});
+
+test('reviewSession ignores reviewer guardrails that were printed as suggestions', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-'));
+  await writeRawEvent(root, 'sess_guardrail_feedback', {
+    id: 'evt_guardrail_feedback',
+    session_id: 'sess_guardrail_feedback',
+    timestamp: new Date().toISOString(),
+    hook: 'PostToolUse',
+    tool: 'Bash',
+    summary: 'Bash ran command: curl local session suggestions',
+    paths: [],
+    status: 'success',
+    signals: ['project_convention'],
+    evidence: [
+      'proposed_text: Project convention: Do not suggest saving secrets, credentials, raw command output, private personal data, or one-off task details.'
+    ]
+  });
+
+  const result = await reviewSession({ root, sessionId: 'sess_guardrail_feedback' });
+
+  assert.deepEqual(result.retrospective.findings, []);
+});
+
+test('reviewSession ignores conventions printed from reviewer proposed_text fields', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-'));
+  await writeRawEvent(root, 'sess_proposed_text_feedback', {
+    id: 'evt_proposed_text_feedback',
+    session_id: 'sess_proposed_text_feedback',
+    timestamp: new Date().toISOString(),
+    hook: 'PostToolUse',
+    tool: 'Bash',
+    summary: 'Bash ran command: curl local session suggestions',
+    paths: [],
+    status: 'success',
+    signals: ['project_convention'],
+    evidence: ['proposed_text: Project convention: use node:test.']
+  });
+
+  const result = await reviewSession({ root, sessionId: 'sess_proposed_text_feedback' });
 
   assert.deepEqual(result.retrospective.findings, []);
 });

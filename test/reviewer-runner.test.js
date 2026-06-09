@@ -3,7 +3,10 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { runReviewerCli } from '../src/service/reviewer-runner.js';
+
+const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 test('runReviewerCli invokes codex-compatible command with internal guard', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-runner-'));
@@ -49,11 +52,126 @@ process.stdin.on('end', () => {
     '--skip-git-repo-check',
     '--ephemeral',
     '--ignore-rules',
+    '--output-schema',
+    path.join(repoRoot, 'schemas', 'retrospective.schema.json'),
     '--output-last-message',
-    logged.args[7],
+    logged.args[9],
     '-'
   ]);
 });
+
+test('retrospective output schema is strict for codex response_format', async () => {
+  const schemaPath = path.join(repoRoot, 'schemas', 'retrospective.schema.json');
+  const schema = JSON.parse(await fs.readFile(schemaPath, 'utf8'));
+  const objectPaths = [];
+  const conditionalPaths = [];
+  const partialRequiredPaths = [];
+
+  collectObjectSchemaPaths(schema, '#', objectPaths);
+  collectConditionalSchemaPaths(schema, '#', conditionalPaths);
+  collectPartialRequiredSchemaPaths(schema, '#', partialRequiredPaths);
+
+  assert.deepEqual(objectPaths, []);
+  assert.deepEqual(conditionalPaths, []);
+  assert.deepEqual(partialRequiredPaths, []);
+});
+
+test('runReviewerCli reports the tail of codex stderr on failure', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-runner-'));
+  const fake = path.join(root, 'fake-codex-fail.js');
+  await fs.writeFile(fake, `#!/usr/bin/env node
+console.error('early warning: '.padEnd(1200, 'x'));
+console.error('late api error: invalid_json_schema');
+process.exit(1);
+`);
+  await fs.chmod(fake, 0o755);
+
+  await assert.rejects(
+    runReviewerCli({
+      root,
+      runtime: 'codex',
+      prompt: 'review this',
+      env: { ...process.env, EVO_BYPASS_CODEX_PATH: fake },
+      timeoutMs: 5000
+    }),
+    /late api error: invalid_json_schema/
+  );
+});
+
+function collectObjectSchemaPaths(schema, pointer, objectPaths) {
+  if (!schema || typeof schema !== 'object') {
+    return;
+  }
+  if (schema.type === 'object' && schema.additionalProperties !== false) {
+    objectPaths.push(pointer);
+  }
+
+  for (const [key, value] of Object.entries(schema)) {
+    if (key === 'properties' && value && typeof value === 'object') {
+      for (const [propertyName, propertySchema] of Object.entries(value)) {
+        collectObjectSchemaPaths(propertySchema, `${pointer}/properties/${propertyName}`, objectPaths);
+      }
+      continue;
+    }
+    if (key === 'items') {
+      collectObjectSchemaPaths(value, `${pointer}/items`, objectPaths);
+      continue;
+    }
+    if (['if', 'then', 'else', 'allOf', 'anyOf', 'oneOf'].includes(key)) {
+      collectObjectSchemaPaths(value, `${pointer}/${key}`, objectPaths);
+    }
+  }
+}
+
+function collectConditionalSchemaPaths(schema, pointer, conditionalPaths) {
+  if (!schema || typeof schema !== 'object') {
+    return;
+  }
+
+  for (const key of ['if', 'then', 'else']) {
+    if (Object.hasOwn(schema, key)) {
+      conditionalPaths.push(`${pointer}/${key}`);
+    }
+  }
+
+  for (const [key, value] of Object.entries(schema)) {
+    if (key === 'properties' && value && typeof value === 'object') {
+      for (const [propertyName, propertySchema] of Object.entries(value)) {
+        collectConditionalSchemaPaths(propertySchema, `${pointer}/properties/${propertyName}`, conditionalPaths);
+      }
+      continue;
+    }
+    if (key === 'items') {
+      collectConditionalSchemaPaths(value, `${pointer}/items`, conditionalPaths);
+    }
+  }
+}
+
+function collectPartialRequiredSchemaPaths(schema, pointer, partialRequiredPaths) {
+  if (!schema || typeof schema !== 'object') {
+    return;
+  }
+
+  if (schema.type === 'object' && schema.properties && typeof schema.properties === 'object') {
+    const required = new Set(Array.isArray(schema.required) ? schema.required : []);
+    const missing = Object.keys(schema.properties).filter((key) => !required.has(key));
+    if (missing.length > 0) {
+      partialRequiredPaths.push(`${pointer}: ${missing.join(', ')}`);
+    }
+  }
+
+  for (const [key, value] of Object.entries(schema)) {
+    if (key === 'properties' && value && typeof value === 'object') {
+      for (const [propertyName, propertySchema] of Object.entries(value)) {
+        collectPartialRequiredSchemaPaths(propertySchema, `${pointer}/properties/${propertyName}`, partialRequiredPaths);
+      }
+      continue;
+    }
+    if (key === 'items') {
+      collectPartialRequiredSchemaPaths(value, `${pointer}/items`, partialRequiredPaths);
+    }
+  }
+}
 
 test('runReviewerCli invokes claude-compatible command with internal guard', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-runner-'));

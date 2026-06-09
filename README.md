@@ -1,5 +1,5 @@
 # Evo Bypass
-![Evo Bypass hero banner](./docs/assets/readme/evo-bypass-hero.png)
+![Evo Bypass local async review service overview](./docs/assets/readme/async-review-overview.png)
 
 ![license](https://img.shields.io/badge/license-MIT-blue.svg) ![tests](https://img.shields.io/badge/tests-node%20--test-2ea44f)
 
@@ -7,7 +7,9 @@ Evo Bypass is an advisory-first knowledge update helper for Claude Code and Code
 
 It runs beside the main agent through lifecycle hooks, records a compact log of what happened during a task, reviews that log in a local background service, and recommends follow-up actions that may be useful for future work.
 
-It does **not** update knowledge automatically. When a background review finds `update_knowledge` actions, Evo Bypass opens a local Web UI where the user can inspect evidence, edit proposed text, and explicitly apply approved updates.
+It does **not** update knowledge automatically. Background reviews accumulate quietly; each day at 18:00 local time, the service opens the local Web UI so the user can inspect that day's sessions, edit proposed text, and explicitly apply approved updates.
+
+![Evo Bypass five value pillars](./docs/assets/readme/five-value-pillars.png)
 ## Quick Start
 Install the hooks for the runtime you use:
 
@@ -22,15 +24,15 @@ After installation, start a normal Codex or Claude Code session in a repository.
 2. `UserPromptSubmit` and tool hooks collect compact, redacted session artifacts under `.bypass/sessions/<session-id>/`.
 3. `Stop` only enqueues a review job when the local service is healthy.
 4. The service runs the local reviewer runtime in the background and writes `retrospective.json` / `retrospective.md`.
-5. If the review proposes knowledge updates, a browser opens to the local approval UI.
+5. At 18:00 local time, the service opens the local approval UI filtered to today's sessions.
 6. Review the evidence, edit proposed text if needed, select actions, and click **Apply selected**.
 
 To inspect the service manually:
 
 ```bash
-node scripts/evo-bypassd.js --root "$PWD" --port 8765
-curl -sf http://127.0.0.1:8765/api/health
-open http://127.0.0.1:8765/sessions
+node scripts/evo-bypassd.js --root "$PWD" --port 8766
+curl -sf http://127.0.0.1:8766/api/health
+open http://127.0.0.1:8766/sessions
 ```
 
 Stop the service with `Ctrl-C` or `SIGTERM`; matching service URL/PID files are cleaned up on graceful shutdown.
@@ -51,9 +53,9 @@ Evo Bypass stores session artifacts under the current workspace:
 
 The collector records summaries, paths, exit status, redacted evidence snippets, and signals such as test failures, dependency changes, and project conventions. It avoids storing large raw outputs and redacts common secret patterns before writing events.
 
-![Evo Bypass storage blueprint](./docs/assets/readme/storage-blueprint.png)
+![Evo Bypass artifact map](./docs/assets/readme/artifact-map.png)
 ## How It Works
-![From noisy session to durable memory](./docs/assets/readme/noisy-session-to-memory.png)
+![Evo Bypass local async review service overview](./docs/assets/readme/async-review-overview.png)
 
 1. `UserPromptSubmit` creates session metadata.
   
@@ -65,7 +67,7 @@ The collector records summaries, paths, exit status, redacted evidence snippets,
   
 5. The service worker reviews the session in the background and writes `retrospective.json`.
   
-6. If the review contains `update_knowledge` actions, the Web UI opens for user editing and approval.
+6. The service opens the Web UI once per day at 18:00 local time for user editing and approval of that day's sessions.
   
 7. Only after approval, the Web UI or optional CLI updater writes approved entries.
   
@@ -73,6 +75,8 @@ The collector records summaries, paths, exit status, redacted evidence snippets,
 By default, approved updates are routed to the most relevant `AGENTS.md`.
 ## Async Local Review Service
 Evo Bypass uses a local async service so the main agent session is not blocked by reviewer work.
+
+![Evo Bypass local async review architecture](./docs/assets/readme/local-async-review-architecture.png)
 
 `SessionStart` checks the local `/api/health` endpoint. If health is already available, it returns immediately. If health is unavailable and the service is enabled, it requests a detached `evo-bypassd` start and still lets the main session continue.
 
@@ -82,9 +86,11 @@ The service stores jobs under `.bypass/jobs/` and processes them one at a time w
 
 The service worker invokes the same local reviewer runtime as the session: Codex sessions use `codex exec`, and Claude Code sessions use `claude -p`. The async service path does not use an OpenAI-compatible provider.
 
-There is no deterministic rules reviewer or LLM fallback in the async path. Missing CLIs, timeouts, invalid JSON, validation errors, and other reviewer failures mark the job as `failed`.
+The async path falls back to the deterministic rules reviewer when the local reviewer CLI fails, times out, returns invalid JSON, or returns a malformed retrospective shape. Jobs still fail when the fallback result cannot be written, a lease is stale, targets are unsafe, evidence ids are unknown, or `fallback` is explicitly set to `none`.
 
-The browser UI opens only when a successful review produces `update_knowledge` actions. The user can edit proposed text in the UI and apply approved actions from there. Smooth reviews, advisory-only findings, skipped jobs, failed jobs, and unhealthy-service Stop hooks do not open the UI.
+Completed jobs do not open the browser immediately. The browser UI opens once per day at 18:00 local time at `/sessions?date=today`; the user can edit proposed text in the UI and apply approved actions from there. Smooth reviews, advisory-only findings, skipped jobs, failed jobs, and unhealthy-service Stop hooks stay visible in the UI without interrupting the user at task end.
+
+![Traditional Stop Hook versus Evo Bypass async Stop](./docs/assets/readme/stop-hook-async-comparison.png)
 ## Task Retrospectives
 
 Every async review writes a task retrospective. The retrospective explains whether the task completed smoothly, which concrete failures or workflow issues appeared, and what action is recommended. Knowledge updates are represented as `update_knowledge` actions inside retrospective findings. Other actions, such as `create_skill`, `improve_code`, or `adjust_agent_usage`, are advisory and are not applied automatically.
@@ -187,8 +193,10 @@ The Claude `Stop` hook uses the same enqueue-only async service path as Codex.
 ## Applying Approved Updates
 The normal approval path is the local Web UI. Open the service UI:
 
+![Evo Bypass Web approval console](./docs/assets/readme/web-approval-console.png)
+
 ```text
-http://127.0.0.1:8765/sessions
+http://127.0.0.1:8766/sessions
 ```
 
 Choose a session with ready `update_knowledge` actions, review the evidence, edit the proposed text, select the actions to apply, and click **Apply selected**. The UI posts the approval to:
@@ -213,10 +221,26 @@ node scripts/apply-approved-update.js <session-id> <action_1,action_2> "user app
 
 The updater refuses to write unless approval is explicit. It also rejects unknown action ids, duplicate approvals, unsafe target paths, malformed retrospective findings, directory targets, and missing approval text.
 
+![Evo Bypass security validation pipeline](./docs/assets/readme/security-validation-pipeline.png)
+
 Old sessions and current compatibility views may use `suggestions.json`; `retrospective.json` is authoritative, and the apply command supports the compatibility fallback.
 
 ![No silent memory mutation](./docs/assets/readme/no-silent-memory-mutation.png)
+## iTerm2 Toolbelt WebView
+To register a small iTerm2 Toolbelt WebView tool, run:
 
+```bash
+scripts/iterm2-toolbelt-webview.py
+```
+
+The default URL is `https://www.google.com`. To point it at the local session viewer instead, start the viewer and pass its URL:
+
+```bash
+node scripts/session-viewer.js --port 38457
+scripts/iterm2-toolbelt-webview.py --url http://localhost:38457
+```
+
+The script must run in an iTerm2 Python API environment with the `iterm2` Python package available.
 ## Configure Knowledge Routing
 By default, Evo Bypass routes knowledge updates to `AGENTS.md` files. If an event includes a scoped path, the reviewer prefers the nearest existing directory-level `AGENTS.md`; if none exists, it may recommend creating a scoped `AGENTS.md` for that directory. If no scoped path is available, it uses the repository root `AGENTS.md`.
 
@@ -236,7 +260,7 @@ at:
 
 Targets must stay inside the workspace. Unsafe paths are ignored and the automatic `AGENTS.md` router is used instead.
 ## Configure Legacy Manual AI Review
-This section applies only to legacy/manual `scripts/review-session.js` runs or old synchronous hook setups. The installed async service hooks do not use this provider configuration: async reviews invoke local `codex exec` or `claude -p`, do not use an OpenAI-compatible provider, and mark jobs `failed` instead of falling back to rules when the local reviewer runtime fails.
+This section applies only to legacy/manual `scripts/review-session.js` runs or old synchronous hook setups. The installed async service hooks do not use this provider configuration: async reviews invoke local `codex exec` or `claude -p`, do not use an OpenAI-compatible provider, and fall back to rules when the local reviewer CLI fails or returns unusable output.
 
 For legacy/manual review runs, Evo Bypass uses the local rules reviewer by default. To enable an OpenAI-compatible AI reviewer for that path, add `reviewer.provider` to `.bypass/config.json`:
 

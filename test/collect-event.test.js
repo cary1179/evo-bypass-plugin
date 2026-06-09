@@ -26,6 +26,42 @@ test('normalizeHookPayload accepts Codex-style hook payloads', () => {
   assert.equal(normalized.command, 'npm test');
 });
 
+test('normalizeHookPayload strips injected recent Codex thread summaries from prompts', () => {
+  const normalized = normalizeHookPayload({
+    runtime: 'codex',
+    hook: 'UserPromptSubmit',
+    session_id: 'codex_sess',
+    prompt: [
+      'Please fix the current session.',
+      '',
+      'Recent Codex threads in this project:',
+      '[',
+      '  { "id": "old", "title": "unrelated old task", "preview": "secret old prompt" }',
+      ']',
+      '',
+      'Continue with the current request.'
+    ].join('\n')
+  });
+
+  assert.match(normalized.prompt, /Please fix the current session/);
+  assert.match(normalized.prompt, /Continue with the current request/);
+  assert.doesNotMatch(normalized.prompt, /Recent Codex threads in this project/);
+  assert.doesNotMatch(normalized.prompt, /unrelated old task/);
+  assert.doesNotMatch(normalized.prompt, /secret old prompt/);
+});
+
+test('normalizeHookPayload marks Codex suggestion prompts as review-skipped', () => {
+  const normalized = normalizeHookPayload({
+    runtime: 'codex',
+    hook: 'UserPromptSubmit',
+    session_id: 'codex_suggestions',
+    prompt: '# Overview\n\nGenerate 0 to 3 hyperpersonalized suggestions for what this user can do with Codex in this local project: /tmp/repo'
+  });
+
+  assert.equal(normalized.skipReview, true);
+  assert.equal(normalized.skipReason, 'codex_suggestions_prompt');
+});
+
 test('normalizeHookPayload accepts top-level command output and exit code fields', () => {
   const normalized = normalizeHookPayload({
     hook: 'PostToolUse',
@@ -83,6 +119,23 @@ test('collectEvent creates metadata on UserPromptSubmit', async () => {
   assert.equal(metadata.session_id, 'sess_meta');
   assert.equal(metadata.original_prompt, 'Build the plugin');
   assert.equal(metadata.working_directory, root);
+});
+
+test('collectEvent records skip metadata for Codex suggestion prompts', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-'));
+  const result = await collectEvent({
+    root,
+    payload: {
+      runtime: 'codex',
+      hook_event_name: 'UserPromptSubmit',
+      session_id: 'sess_suggestions',
+      prompt: '# Overview\n\nGenerate 0 to 3 hyperpersonalized suggestions for what this user can do with Codex in this local project: /tmp/repo'
+    }
+  });
+
+  const metadata = JSON.parse(await fs.readFile(result.paths.metadataPath, 'utf8'));
+  assert.equal(metadata.skip_review, true);
+  assert.equal(metadata.skip_reason, 'codex_suggestions_prompt');
 });
 
 test('collectEvent skips internal reviewer invocations', async () => {
@@ -232,6 +285,46 @@ test('collectEvent does not mark weak keyword mentions as project conventions', 
       session_id: 'sess_weak_keyword',
       tool_name: 'Bash',
       tool_response: { exit_code: 0, output: 'The docs mention convention and prefer in a paragraph, but no rule is stated.' }
+    }
+  });
+
+  const lines = (await fs.readFile(result.paths.eventsPath, 'utf8')).trim().split('\n');
+  const event = JSON.parse(lines.at(-1));
+  assert.equal(event.signals.includes('project_convention'), false);
+});
+
+test('collectEvent does not treat reviewer guardrails as project conventions', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-'));
+  const result = await collectEvent({
+    root,
+    payload: {
+      hook_event_name: 'PostToolUse',
+      session_id: 'sess_reviewer_guardrail',
+      tool_name: 'Bash',
+      tool_response: {
+        exit_code: 0,
+        output: 'proposed_text: Project convention: Do not suggest saving secrets, credentials, raw command output, private personal data, or one-off task details.'
+      }
+    }
+  });
+
+  const lines = (await fs.readFile(result.paths.eventsPath, 'utf8')).trim().split('\n');
+  const event = JSON.parse(lines.at(-1));
+  assert.equal(event.signals.includes('project_convention'), false);
+});
+
+test('collectEvent does not extract project conventions from reviewer proposed_text fields', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-'));
+  const result = await collectEvent({
+    root,
+    payload: {
+      hook_event_name: 'PostToolUse',
+      session_id: 'sess_reviewer_proposed_text',
+      tool_name: 'Bash',
+      tool_response: {
+        exit_code: 0,
+        output: 'proposed_text: Project convention: use node:test.'
+      }
     }
   });
 

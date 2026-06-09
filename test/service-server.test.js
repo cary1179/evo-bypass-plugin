@@ -6,6 +6,7 @@ import path from 'node:path';
 import { startServiceServer } from '../src/service/server.js';
 import { resolveServicePaths } from '../src/core/service-paths.js';
 import { resolveSessionPaths } from '../src/core/session-paths.js';
+import { claimNextJob, enqueueJob, readJob } from '../src/service/job-store.js';
 
 test('service server exposes health and writes service files', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-service-'));
@@ -274,6 +275,69 @@ test('service worker ticks do not overlap while a run is pending', async () => {
   }
 });
 
+test('service worker resets expired running jobs on later ticks', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-service-'));
+  let calls = 0;
+  const service = await startServiceServer({
+    root,
+    host: '127.0.0.1',
+    port: 0,
+    workerIntervalMs: 5,
+    worker: async () => {
+      calls += 1;
+    },
+  });
+  try {
+    await waitFor(() => calls > 0);
+    await enqueueJob({ root, sessionId: 'sess_expired_later', runtime: 'codex' });
+    const claimed = await claimNextJob({ root, leaseMs: -1 });
+    assert.equal(claimed.status, 'running');
+
+    await waitFor(async () => {
+      const job = await readJob({ root, jobId: 'job_sess_expired_later' });
+      return job.status === 'queued';
+    });
+  } finally {
+    await service.close();
+  }
+});
+
+test('service opens daily review page at configured local time and clears timer on close', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-service-'));
+  const timers = [];
+  const cleared = [];
+  const opened = [];
+  const service = await startServiceServer({
+    root,
+    host: '127.0.0.1',
+    port: 0,
+    startWorker: false,
+    dailyReviewTime: '18:00',
+    now: () => new Date(2026, 5, 7, 17, 30, 0, 0),
+    setTimer: (callback, delay) => {
+      const timer = { callback, delay };
+      timers.push(timer);
+      return timer;
+    },
+    clearTimer: (timer) => cleared.push(timer),
+    openDailyReview: (url) => opened.push(url)
+  });
+  try {
+    assert.equal(timers.length, 1);
+    assert.equal(timers[0].delay, 30 * 60 * 1000);
+    assert.deepEqual(opened, []);
+
+    timers[0].callback();
+
+    assert.deepEqual(opened, [`${service.url}/sessions?date=today`]);
+    assert.equal(timers.length, 2);
+  } finally {
+    await service.close();
+  }
+
+  assert.equal(cleared.includes(timers.at(-1)), true);
+});
+
 test('service normalizes bracketed IPv6 host for listen and URL', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-service-'));
   const service = await startServiceServer({ root, host: '[::1]', port: 0, startWorker: false });
@@ -353,7 +417,7 @@ function delay(ms) {
 async function waitFor(predicate, { timeoutMs = 1000, intervalMs = 5 } = {}) {
   const startedAt = Date.now();
   while (Date.now() - startedAt < timeoutMs) {
-    if (predicate()) return;
+    if (await predicate()) return;
     await delay(intervalMs);
   }
   assert.fail('timed out waiting for condition');

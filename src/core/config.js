@@ -6,14 +6,14 @@ const DEFAULT_VIEWER = Object.freeze({
   enabled: false,
   openMode: 'url',
   host: '127.0.0.1',
-  port: 8765,
+  port: 8766,
   openOnlyWhenSuggestions: true
 });
 
 const DEFAULT_SERVICE = Object.freeze({
   enabled: true,
   host: '127.0.0.1',
-  port: 8765,
+  port: 8766,
   idleTimeoutMs: 20 * 60 * 1000,
   healthTimeoutMs: 250,
   openBrowserOnKnowledge: true

@@ -16,7 +16,7 @@ test('readBypassConfig returns safe defaults when config is missing', async () =
     enabled: false,
     openMode: 'url',
     host: '127.0.0.1',
-    port: 8765,
+    port: 8766,
     openOnlyWhenSuggestions: true
   });
   assert.deepEqual(config.reviewer, {
@@ -28,7 +28,7 @@ test('readBypassConfig returns safe defaults when config is missing', async () =
   assert.deepEqual(config.service, {
     enabled: true,
     host: '127.0.0.1',
-    port: 8765,
+    port: 8766,
     idleTimeoutMs: 1200000,
     healthTimeoutMs: 250,
     openBrowserOnKnowledge: true
@@ -130,7 +130,7 @@ test('readBypassConfig rejects unsafe or invalid config values', async () => {
     enabled: false,
     openMode: 'url',
     host: '127.0.0.1',
-    port: 8765,
+    port: 8766,
     openOnlyWhenSuggestions: true
   });
   assert.deepEqual(config.reviewer, {
@@ -155,7 +155,7 @@ test('readBypassConfig normalizes async review service defaults', async () => {
 
   assert.equal(config.service.enabled, true);
   assert.equal(config.service.host, '127.0.0.1');
-  assert.equal(config.service.port, 8765);
+  assert.equal(config.service.port, 8766);
   assert.equal(config.service.idleTimeoutMs, 1200000);
   assert.equal(config.service.healthTimeoutMs, 250);
   assert.equal(config.service.openBrowserOnKnowledge, true);
@@ -207,7 +207,7 @@ test('normalizeService rejects invalid async review service settings', () => {
   }), {
     enabled: true,
     host: '127.0.0.1',
-    port: 8765,
+    port: 8766,
     idleTimeoutMs: 1200000,
     healthTimeoutMs: 250,
     openBrowserOnKnowledge: true

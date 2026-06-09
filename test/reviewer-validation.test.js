@@ -41,6 +41,39 @@ test('validateReviewerResult accepts update_knowledge with known evidence and ca
   assert.equal(result.retrospective.findings[0].action.target, target);
 });
 
+test('validateReviewerResult rejects reviewer guardrail knowledge updates', () => {
+  const root = '/tmp/repo';
+  const target = path.join(root, 'AGENTS.md');
+
+  assert.throws(() => validateReviewerResult({
+    root,
+    parsed: {
+      session_id: 'sess_review',
+      summary: 'Found convention.',
+      retrospective: {
+        outcome: 'completed',
+        quality: 'minor_issues',
+        findings: [{
+          id: 'finding_evt_1',
+          category: 'knowledge',
+          severity: 'medium',
+          evidence: ['evt_1'],
+          diagnosis: 'Reusable convention.',
+          recommendation: 'Save it.',
+          action: {
+            type: 'update_knowledge',
+            confidence: 'high',
+            target,
+            proposed_text: 'Project convention: Do not suggest saving secrets, credentials, raw command output, private personal data, or one-off task details.'
+          }
+        }]
+      }
+    },
+    events: [{ id: 'evt_1' }],
+    candidates: [{ target }]
+  }), /reusable project convention/);
+});
+
 test('validateReviewerResult accepts job-provided session id for async reviewer output', () => {
   const result = validateReviewerResult({
     root: '/tmp/repo',

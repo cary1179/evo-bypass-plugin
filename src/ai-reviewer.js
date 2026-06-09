@@ -2,6 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { normalizeRetrospectiveResult } from './core/retrospective-schema.js';
+import { hasReusableProjectConvention } from './project-convention.js';
 
 const repoRoot = fileURLToPath(new URL('..', import.meta.url));
 const reviewerPromptPath = path.join(repoRoot, 'prompts', 'reviewer.md');
@@ -149,6 +150,9 @@ function normalizeAiFinding({ root, eventIds, targetByCandidate, finding }) {
   if (action.type === 'update_knowledge') {
     const target = safeCandidateTarget({ root, target: action.target, targetByCandidate });
     if (!target) {
+      return undefined;
+    }
+    if (!hasReusableProjectConvention(action.proposed_text)) {
       return undefined;
     }
     action.target = target;

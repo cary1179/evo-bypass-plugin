@@ -6,10 +6,9 @@ import path from 'node:path';
 import { resolveServicePaths } from '../src/core/service-paths.js';
 import { enqueueJob, readJob } from '../src/service/job-store.js';
 import { runOneReviewJob } from '../src/service/review-worker.js';
-import { notifyKnowledgeReady } from '../src/service/notifier.js';
 import { resolveSessionPaths } from '../src/core/session-paths.js';
 
-test('runOneReviewJob completes review artifacts and notifies for knowledge updates', async () => {
+test('runOneReviewJob completes review artifacts without immediate browser notification', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-worker-'));
   await fs.writeFile(path.join(root, 'AGENTS.md'), 'Existing knowledge.\n');
   await writeConfig(root, {
@@ -66,6 +65,7 @@ test('runOneReviewJob completes review artifacts and notifies for knowledge upda
   assert.equal(result.status, 'succeeded');
   assert.equal(reviewerCall.root, root);
   assert.equal(reviewerCall.runtime, 'codex');
+  assert.equal(reviewerCall.timeoutMs, 120000);
   assert.match(reviewerCall.prompt, /Session Payload/);
   assert.equal(reviewerCall.payload.session.session_id, 'sess_notify');
   assert.equal(reviewerCall.payload.events.length, 1);
@@ -86,14 +86,7 @@ test('runOneReviewJob completes review artifacts and notifies for knowledge upda
   const job = await readJob({ root, jobId: 'job_sess_notify' });
   assert.equal(job.status, 'succeeded');
   assert.equal(job.lease_token, '');
-  assert.deepEqual(notifications, [{
-    root,
-    host: '127.0.0.1',
-    port: 9988,
-    sessionId: 'sess_notify',
-    openBrowser: true,
-    url: 'http://127.0.0.1:9988/sessions/sess_notify?review=ready'
-  }]);
+  assert.deepEqual(notifications, []);
 });
 
 test('runOneReviewJob uses job session id when reviewer returns a conflicting session id', async () => {
@@ -126,21 +119,86 @@ test('runOneReviewJob uses job session id when reviewer returns a conflicting se
   );
 });
 
-test('notifyKnowledgeReady returns a ready review deep link and opens best-effort when enabled', () => {
-  const opened = [];
+test('runOneReviewJob uses rules fallback when reviewer result shape is malformed', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-worker-'));
+  await fs.writeFile(path.join(root, 'AGENTS.md'), 'Existing knowledge.\n');
+  await writeSession(root, 'sess_malformed_fallback', {
+    events: [
+      event({
+        id: 'evt_malformed',
+        sessionId: 'sess_malformed_fallback',
+        summary: 'Project convention: recover async review jobs with rules fallback.',
+        signals: ['project_convention'],
+        paths: ['src/service/review-worker.js']
+      })
+    ]
+  });
+  await enqueueJob({ root, sessionId: 'sess_malformed_fallback', runtime: 'codex' });
 
-  const result = notifyKnowledgeReady({
-    host: '127.0.0.1',
-    port: 4321,
-    sessionId: 'sess_link',
-    opener: (url) => opened.push(url)
+  const notifications = [];
+  const result = await runOneReviewJob({
+    root,
+    reviewer: async () => ({
+      raw: '{"retrospective":{"findings":"bad"}}',
+      parsed: {
+        summary: 'Malformed reviewer result.',
+        retrospective: { findings: 'bad' }
+      }
+    }),
+    notify: async (payload) => notifications.push(payload)
   });
 
-  assert.equal(result.url, 'http://127.0.0.1:4321/sessions/sess_link?review=ready');
-  assert.deepEqual(opened, [result.url]);
+  assert.equal(result.status, 'succeeded');
+  assert.equal(result.result.retrospective.findings.length, 1);
+  assert.equal(result.result.retrospective.findings[0].action.type, 'update_knowledge');
+  assert.equal(
+    result.result.retrospective.findings[0].action.proposed_text,
+    'Project convention: recover async review jobs with rules fallback.'
+  );
+  assert.deepEqual(notifications, []);
+
+  const paths = resolveSessionPaths({ root, sessionId: 'sess_malformed_fallback' });
+  assert.match(await fs.readFile(paths.reviewerLogPath, 'utf8'), /Rules fallback reason:/);
+  assert.equal((await readJob({ root, jobId: 'job_sess_malformed_fallback' })).status, 'succeeded');
 });
 
-test('runOneReviewJob notifies using the running service url instead of stale config', async () => {
+test('runOneReviewJob uses rules fallback when reviewer CLI fails', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-worker-'));
+  await fs.writeFile(path.join(root, 'AGENTS.md'), 'Existing knowledge.\n');
+  await writeSession(root, 'sess_cli_fallback', {
+    events: [
+      event({
+        id: 'evt_cli_fallback',
+        sessionId: 'sess_cli_fallback',
+        summary: 'Project convention: recover failed reviewer CLI jobs with rules fallback.',
+        signals: ['project_convention'],
+        paths: ['src/service/review-worker.js']
+      })
+    ]
+  });
+  await enqueueJob({ root, sessionId: 'sess_cli_fallback', runtime: 'codex' });
+
+  const result = await runOneReviewJob({
+    root,
+    reviewer: async () => {
+      throw new Error('Reviewer CLI timed out after 180000ms');
+    }
+  });
+
+  assert.equal(result.status, 'succeeded');
+  assert.equal(result.result.retrospective.findings.length, 1);
+  assert.equal(result.result.retrospective.findings[0].action.type, 'update_knowledge');
+  assert.equal(
+    result.result.retrospective.findings[0].action.proposed_text,
+    'Project convention: recover failed reviewer CLI jobs with rules fallback.'
+  );
+
+  const paths = resolveSessionPaths({ root, sessionId: 'sess_cli_fallback' });
+  assert.match(await fs.readFile(paths.reviewerLogPath, 'utf8'), /Rules fallback reason: Reviewer CLI timed out/);
+  assert.equal((await readJob({ root, jobId: 'job_sess_cli_fallback' })).status, 'succeeded');
+});
+
+test('runOneReviewJob does not notify even when running service url differs from config', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-worker-'));
   await fs.writeFile(path.join(root, 'AGENTS.md'), 'Existing knowledge.\n');
   await writeConfig(root, {
@@ -161,9 +219,7 @@ test('runOneReviewJob notifies using the running service url instead of stale co
     notify: async (payload) => notifications.push(payload)
   });
 
-  assert.equal(notifications[0].host, '127.0.0.1');
-  assert.equal(notifications[0].port, 2222);
-  assert.equal(notifications[0].url, 'http://127.0.0.1:2222/sessions/sess_live_url?review=ready');
+  assert.deepEqual(notifications, []);
 });
 
 test('runOneReviewJob keeps valid events when JSONL contains malformed lines', async () => {
@@ -398,6 +454,7 @@ test('runOneReviewJob does not write retrospective artifacts after losing its le
 
 test('runOneReviewJob fails reviewer errors without rules fallback or notification', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-worker-'));
+  await writeConfig(root, { reviewer: { mode: 'ai', fallback: 'none' } });
   await writeSession(root, 'sess_fail', {
     events: [event({ id: 'evt_fail', sessionId: 'sess_fail' })]
   });
@@ -423,6 +480,7 @@ test('runOneReviewJob fails reviewer errors without rules fallback or notificati
 
 test('runOneReviewJob marks failed when reviewer.log cannot be written', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-worker-'));
+  await writeConfig(root, { reviewer: { mode: 'ai', fallback: 'none' } });
   const paths = await writeSession(root, 'sess_unwritable_log', {
     events: [event({ id: 'evt_unwritable_log', sessionId: 'sess_unwritable_log' })]
   });
@@ -446,6 +504,7 @@ test('runOneReviewJob marks failed when reviewer.log cannot be written', async (
 
 test('runOneReviewJob does not write failure artifacts after losing its lease', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-worker-'));
+  await writeConfig(root, { reviewer: { mode: 'ai', fallback: 'none' } });
   await writeSession(root, 'sess_stale_failure', {
     events: [event({ id: 'evt_stale_failure', sessionId: 'sess_stale_failure' })]
   });
@@ -504,6 +563,27 @@ test('runOneReviewJob skips empty-event sessions without reviewer call', async (
 
   assert.equal(result.status, 'skipped');
   assert.equal((await readJob({ root, jobId: 'job_sess_empty' })).status, 'skipped');
+});
+
+test('runOneReviewJob skips sessions marked skip_review without reviewer call', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'evo-bypass-worker-'));
+  await writeSession(root, 'sess_skip_review', {
+    metadata: { skip_review: true, skip_reason: 'codex_suggestions_prompt' },
+    events: [event({ id: 'evt_skip_review', sessionId: 'sess_skip_review' })]
+  });
+  await enqueueJob({ root, sessionId: 'sess_skip_review', runtime: 'codex' });
+
+  const result = await runOneReviewJob({
+    root,
+    reviewer: async () => {
+      throw new Error('reviewer should not be called');
+    }
+  });
+
+  assert.equal(result.status, 'skipped');
+  const job = await readJob({ root, jobId: 'job_sess_skip_review' });
+  assert.equal(job.status, 'skipped');
+  assert.equal(job.error, 'codex_suggestions_prompt');
 });
 
 async function writeConfig(root, config) {

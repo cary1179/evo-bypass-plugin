@@ -2,8 +2,11 @@ import { spawn } from 'node:child_process';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const CLAUDE_DISALLOWED_TOOLS = 'Bash,Edit,MultiEdit,Write,NotebookEdit,WebFetch,WebSearch,Task';
+const PACKAGE_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
+const RETROSPECTIVE_SCHEMA_PATH = path.join(PACKAGE_ROOT, 'schemas', 'retrospective.schema.json');
 
 export async function runReviewerCli({ root, runtime, prompt, env = process.env, timeoutMs = 180000 }) {
   if (runtime === 'codex') {
@@ -25,6 +28,8 @@ async function runCodex({ root, prompt, env, timeoutMs }) {
     '--skip-git-repo-check',
     '--ephemeral',
     '--ignore-rules',
+    '--output-schema',
+    RETROSPECTIVE_SCHEMA_PATH,
     '--output-last-message',
     outputPath,
     '-'
@@ -166,7 +171,7 @@ function runProcess({ command, args, input, cwd, env, timeoutMs }) {
     });
     child.on('close', (code) => {
       if (code !== 0) {
-        finish(reject, new Error(`Reviewer CLI exited ${code}: ${stderr.slice(0, 1000)}`));
+        finish(reject, new Error(`Reviewer CLI exited ${code}: ${stderr.slice(-4000)}`));
         return;
       }
       finish(resolve, { stdout, stderr });

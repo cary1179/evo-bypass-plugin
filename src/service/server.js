@@ -8,20 +8,28 @@ import { enqueueJob, listJobs, readJob, resetStaleRunningJobs } from './job-stor
 import { runOneReviewJob } from './review-worker.js';
 import { listSessions, getSessionDetail } from '../viewer/session-store.js';
 import { applyEditedApprovedUpdate } from './apply-edited-update.js';
+import { openUrl } from './notifier.js';
 
 const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '::1', '[::1]']);
 const repoRoot = fileURLToPath(new URL('../..', import.meta.url));
 const packageJsonPath = path.join(repoRoot, 'package.json');
 const uiPath = path.join(repoRoot, 'src', 'viewer', 'static', 'index.html');
 const DEFAULT_WORKER_INTERVAL_MS = 2000;
+const DEFAULT_DAILY_REVIEW_TIME = '18:00';
 
 export async function startServiceServer({
   root = process.cwd(),
   host = '127.0.0.1',
-  port = 8765,
+  port = 8766,
   startWorker = true,
   workerIntervalMs = DEFAULT_WORKER_INTERVAL_MS,
   worker = runOneReviewJob,
+  startDailyReview = true,
+  dailyReviewTime = DEFAULT_DAILY_REVIEW_TIME,
+  openDailyReview = openUrl,
+  now = () => new Date(),
+  setTimer = setTimeout,
+  clearTimer = clearTimeout,
 } = {}) {
   const safeHost = normalizeLoopbackHost(host);
   const version = await packageVersion();
@@ -45,6 +53,9 @@ export async function startServiceServer({
   const url = serviceUrl({ host: safeHost, port: resolvedPort });
   await writeServiceFiles({ root, url });
   let closePromise;
+  const dailyReview = startDailyReview
+    ? scheduleDailyReview({ url, time: dailyReviewTime, opener: openDailyReview, now, setTimer, clearTimer })
+    : undefined;
 
   let workerTimer;
   let workerInFlight = false;
@@ -53,7 +64,8 @@ export async function startServiceServer({
     workerTimer = setInterval(() => {
       if (workerInFlight) return;
       workerInFlight = true;
-      worker({ root })
+      resetStaleRunningJobs({ root })
+        .then(() => worker({ root }))
         .catch(() => {})
         .finally(() => {
           workerInFlight = false;
@@ -68,10 +80,57 @@ export async function startServiceServer({
     port: resolvedPort,
     url,
     close: () => {
-      closePromise ??= closeService({ root, server, workerTimer, url, pid: process.pid });
+      closePromise ??= closeService({ root, server, workerTimer, dailyReview, url, pid: process.pid });
       return closePromise;
     },
   };
+}
+
+function scheduleDailyReview({ url, time, opener, now, setTimer, clearTimer }) {
+  let timer;
+  const schedule = () => {
+    timer = setTimer(() => {
+      opener(dailyReviewUrl(url));
+      schedule();
+    }, delayUntilLocalTime({ now: now(), time }));
+    timer?.unref?.();
+  };
+  schedule();
+  return {
+    close: () => {
+      if (timer) {
+        clearTimer(timer);
+        timer = undefined;
+      }
+    }
+  };
+}
+
+function dailyReviewUrl(url) {
+  const parsed = new URL('/sessions', url);
+  parsed.searchParams.set('date', 'today');
+  return parsed.href;
+}
+
+function delayUntilLocalTime({ now, time }) {
+  const [hour, minute] = parseDailyTime(time);
+  const next = new Date(now);
+  next.setHours(hour, minute, 0, 0);
+  if (next.getTime() <= now.getTime()) {
+    next.setDate(next.getDate() + 1);
+  }
+  return next.getTime() - now.getTime();
+}
+
+function parseDailyTime(time) {
+  const match = /^(\d{1,2}):(\d{2})$/.exec(String(time || ''));
+  if (!match) return [18, 0];
+  const hour = Number(match[1]);
+  const minute = Number(match[2]);
+  if (!Number.isInteger(hour) || !Number.isInteger(minute) || hour < 0 || hour > 23 || minute < 0 || minute > 59) {
+    return [18, 0];
+  }
+  return [hour, minute];
 }
 
 async function handleRequest({ request, response, root, version, serverUrl }) {
@@ -258,8 +317,9 @@ async function writeServiceFiles({ root, url }) {
   await fs.writeFile(paths.servicePidPath, `${process.pid}\n`);
 }
 
-async function closeService({ root, server, workerTimer, url, pid }) {
+async function closeService({ root, server, workerTimer, dailyReview, url, pid }) {
   if (workerTimer) clearInterval(workerTimer);
+  dailyReview?.close();
   await new Promise((resolve, reject) => {
     server.close((error) => error ? reject(error) : resolve());
   });

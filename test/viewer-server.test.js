@@ -49,6 +49,8 @@ test('viewer server exposes health, JSON APIs, and UI routes', async () => {
     assert.match(html, /applyMessage/);
     assert.match(html, /class="session-link"/);
     assert.match(html, /href="\/sessions\/\$\{encodeURIComponent\(session\.session_id\)\}"/);
+    assert.match(html, /date"\) \|\| "all"/);
+    assert.match(html, /matchesDateFilter\(session\)/);
     assert.match(html, /loadDetail\(sessionId, \{ preserveApplyMessage = false \} = \{\}\)/);
     assert.ok(
       html.indexOf('event.target.closest("[data-event]")') < html.indexOf('event.target.closest("a, button, input, textarea, select, label")'),
@@ -61,12 +63,12 @@ test('viewer server exposes health, JSON APIs, and UI routes', async () => {
 
 test('viewerUrl points to the detail route when session id is provided', () => {
   assert.equal(
-    viewerUrl({ host: '127.0.0.1', port: 8765, sessionId: 'sess_123' }),
-    'http://127.0.0.1:8765/sessions/sess_123'
+    viewerUrl({ host: '127.0.0.1', port: 8766, sessionId: 'sess_123' }),
+    'http://127.0.0.1:8766/sessions/sess_123'
   );
   assert.equal(
-    viewerUrl({ host: '127.0.0.1', port: 8765 }),
-    'http://127.0.0.1:8765/sessions'
+    viewerUrl({ host: '127.0.0.1', port: 8766 }),
+    'http://127.0.0.1:8766/sessions'
   );
 });
 

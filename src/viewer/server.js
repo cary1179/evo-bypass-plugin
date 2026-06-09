@@ -19,7 +19,7 @@ export async function createViewerServer({ root = process.cwd() } = {}) {
   });
 }
 
-export async function startViewerServer({ root = process.cwd(), host = '127.0.0.1', port = 8765 } = {}) {
+export async function startViewerServer({ root = process.cwd(), host = '127.0.0.1', port = 8766 } = {}) {
   const server = await createViewerServer({ root });
   await new Promise((resolve, reject) => {
     server.once('error', reject);
